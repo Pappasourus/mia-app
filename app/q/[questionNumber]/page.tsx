@@ -83,6 +83,8 @@ const { prevNum, nextNum } = useMemo(() => {
       );
       return;
     }
+    // ===== ANCHOR: question-page-sb-alias =====
+const sb = supabase;
 
     let cancelled = false;
 
@@ -98,7 +100,7 @@ const { prevNum, nextNum } = useMemo(() => {
       }
 
       // 1) Must be logged in
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData } = await sb.auth.getSession();
       const session = sessionData.session;
 
       if (!session) {
@@ -112,7 +114,7 @@ const { prevNum, nextNum } = useMemo(() => {
       // ===== ANCHOR: question-page-store-userid =====
 setUserId(session.user.id);
       // ===== ANCHOR: question-page-load-all-statuses =====
-const { data: allAns, error: allAnsErr } = await supabase
+const { data: allAns, error: allAnsErr } = await sb
   .from("answers")
   .select("question_id, status")
   .eq("student_user_id", session.user.id);
@@ -128,7 +130,7 @@ if (!allAnsErr) {
 }
 
       // 2) Load this question by number
-      const { data: qData, error: qErr } = await supabase
+      const { data: qData, error: qErr } = await sb
         .from("questions")
         .select("id, question_number, title, prompt, marks")
         .eq("question_number", questionNumber)
@@ -143,7 +145,7 @@ if (!allAnsErr) {
       const q = qData as QuestionRow;
       // ===== ANCHOR: question-page-load-question-numbers =====
 // ===== ANCHOR: question-page-load-questions-index =====
-const { data: qIndex, error: qIndexErr } = await supabase
+const { data: qIndex, error: qIndexErr } = await sb
   .from("questions")
   .select("id, question_number")
   .order("question_number", { ascending: true });
@@ -165,7 +167,7 @@ if (!qIndexErr) {
   setQuestionsIdByNumber(map);
 }
 // ===== ANCHOR: question-page-load-media =====
-const { data: mData, error: mErr } = await supabase
+const { data: mData, error: mErr } = await sb
   .from("question_media")
   .select("id, kind, bucket, path, caption, sort_order")
   .eq("question_id", q.id)
@@ -175,7 +177,7 @@ if (!mErr) {
   const items: MediaItem[] = (mData ?? []).map((m: any) => {
     const bucket = String(m?.bucket ?? "question-media");
     const path = String(m?.path ?? "");
-    const pub = supabase.storage.from(bucket).getPublicUrl(path);
+    const pub = sb.storage.from(bucket).getPublicUrl(path);
     const url = String(pub?.data?.publicUrl ?? "");
 
     return {
@@ -190,7 +192,7 @@ if (!mErr) {
   setMediaItems(items.filter((x) => x.id && x.url));
 }
       // 3) Load this student's answer row (if any)
-      const { data: aData, error: aErr } = await supabase
+      const { data: aData, error: aErr } = await sb
         .from("answers")
         .select("id, question_id, student_user_id, status, draft_text, submitted_text")
         .eq("question_id", q.id)
