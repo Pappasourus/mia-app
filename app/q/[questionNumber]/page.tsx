@@ -388,20 +388,7 @@ const payload = {
                   Save Draft
                 </button>
 
-                <button
-                  onClick={saveAndNext}
-                  disabled={!nextNum || isSubmitted}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    cursor: !nextNum || isSubmitted ? "not-allowed" : "pointer",
-                    opacity: !nextNum || isSubmitted ? 0.5 : 1,
-                  }}
-                >
-                  Save &amp; Next
-                </button>
-
+                
                 <button
                   onClick={submitFinal}
                   style={{
@@ -425,6 +412,60 @@ const payload = {
                   {statusText}
                 </p>
               ) : null}
+
+              {/* ===== ANCHOR: question-page-bottom-nav ===== */}
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTop: "1px solid #eee",
+  }}
+>
+  <button
+    onClick={() => prevNum && router.push(`/q/${prevNum}`)}
+    disabled={!prevNum}
+    style={{
+      padding: "10px 12px",
+      borderRadius: 10,
+      border: "1px solid #333",
+      cursor: prevNum ? "pointer" : "not-allowed",
+      opacity: prevNum ? 1 : 0.5,
+    }}
+  >
+    Previous
+  </button>
+
+  <div style={{ display: "flex", gap: 10 }}>
+    <button
+      onClick={saveAndNext}
+      disabled={!nextNum || isSubmitted}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        cursor: !nextNum || isSubmitted ? "not-allowed" : "pointer",
+        opacity: !nextNum || isSubmitted ? 0.5 : 1,
+      }}
+    >
+      Save &amp; Next
+    </button>
+
+    <button
+      onClick={() => router.push("/questions")}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        cursor: "pointer",
+      }}
+    >
+      Finish
+    </button>
+  </div>
+</div>
             </div>
           </div>
         ) : null}
