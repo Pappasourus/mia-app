@@ -22,9 +22,15 @@ if (!supabase) {
   );
 }
 
-  async function handleSignIn() {
-    setStatus("Signing in...");
-    const { error } = await supabase.auth.signInWithPassword({
+  // ===== ANCHOR: login-signin-null-guard =====
+async function handleSignIn() {
+  if (!supabase) {
+    setStatus("Supabase is not configured (missing env vars).");
+    return;
+  }
+
+  setStatus("Signing in...");
+  const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -38,9 +44,15 @@ if (!supabase) {
     router.push("/dashboard");
   }
 
-  async function handleSignUp() {
-    setStatus("Creating account...");
-    const { error } = await supabase.auth.signUp({
+ // ===== ANCHOR: login-signup-null-guard =====
+async function handleSignUp() {
+  if (!supabase) {
+    setStatus("Supabase is not configured (missing env vars).");
+    return;
+  }
+
+  setStatus("Creating account...");
+  const { error } = await supabase.auth.signUp({
       email,
       password,
     });
