@@ -22,6 +22,15 @@ type AnswerRow = {
   submitted_text: string;
 };
 
+// ===== ANCHOR: question-page-media-types =====
+type MediaItem = {
+  id: string;
+  kind: "image" | "video";
+  url: string;
+  caption: string;
+  sort_order: number;
+};
+
 export default function QuestionPage() {
   const router = useRouter();
   const params = useParams<{ questionNumber: string }>();
@@ -41,6 +50,8 @@ const [questionsIdByNumber, setQuestionsIdByNumber] = useState<Record<number, st
   {},
 );
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
+  // ===== ANCHOR: question-page-media-state =====
+const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   // ===== ANCHOR: question-page-status-map-state =====
 const [statusByQuestionId, setStatusByQuestionId] = useState<
   Record<string, "not_started" | "draft" | "submitted">
@@ -153,7 +164,31 @@ if (!qIndexErr) {
   // store on window? no. store in state below:
   setQuestionsIdByNumber(map);
 }
+// ===== ANCHOR: question-page-load-media =====
+const { data: mData, error: mErr } = await supabase
+  .from("question_media")
+  .select("id, kind, bucket, path, caption, sort_order")
+  .eq("question_id", q.id)
+  .order("sort_order", { ascending: true });
 
+if (!mErr) {
+  const items: MediaItem[] = (mData ?? []).map((m: any) => {
+    const bucket = String(m?.bucket ?? "question-media");
+    const path = String(m?.path ?? "");
+    const pub = supabase.storage.from(bucket).getPublicUrl(path);
+    const url = String(pub?.data?.publicUrl ?? "");
+
+    return {
+      id: String(m?.id ?? ""),
+      kind: (m?.kind as "image" | "video") ?? "image",
+      url,
+      caption: String(m?.caption ?? ""),
+      sort_order: Number(m?.sort_order ?? 0),
+    };
+  });
+
+  setMediaItems(items.filter((x) => x.id && x.url));
+}
       // 3) Load this student's answer row (if any)
       const { data: aData, error: aErr } = await supabase
         .from("answers")
@@ -334,19 +369,61 @@ const payload = {
                 {question.prompt}
               </div>
 
-              {/* Media area will go here next phase */}
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 10,
-                  border: "1px dashed #bbb",
-                  opacity: 0.8,
-                  fontSize: 13,
-                }}
-              >
-                Media area (videos/images) will appear here in the next steps.
-              </div>
+              {/* ===== ANCHOR: question-page-media-render ===== */}
+{mediaItems.length === 0 ? (
+  <div
+    style={{
+      marginTop: 14,
+      padding: 12,
+      borderRadius: 10,
+      border: "1px dashed #bbb",
+      opacity: 0.8,
+      fontSize: 13,
+    }}
+  >
+    No media attached to this question yet.
+  </div>
+) : (
+  <div
+    style={{
+      marginTop: 14,
+      display: "grid",
+      gridTemplateColumns: mediaItems.length >= 2 ? "1fr 1fr" : "1fr",
+      gap: 10,
+    }}
+  >
+    {mediaItems.map((m) => (
+      <div
+        key={m.id}
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 10,
+        }}
+      >
+        {m.kind === "image" ? (
+          <img
+            src={m.url}
+            alt={m.caption || "Question media"}
+            style={{ width: "100%", borderRadius: 10, display: "block" }}
+          />
+        ) : (
+          <video
+            src={m.url}
+            controls
+            style={{ width: "100%", borderRadius: 10, display: "block" }}
+          />
+        )}
+
+        {m.caption ? (
+          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.75 }}>
+            {m.caption}
+          </div>
+        ) : null}
+      </div>
+    ))}
+  </div>
+)}
 
               <label
                 style={{
