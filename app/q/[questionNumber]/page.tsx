@@ -34,6 +34,8 @@ export default function QuestionPage() {
   // ===== ANCHOR: question-page-userid-state =====
 const [userId, setUserId] = useState<string>("");
   const [question, setQuestion] = useState<QuestionRow | null>(null);
+  // ===== ANCHOR: question-page-all-question-numbers-state =====
+const [allQuestionNumbers, setAllQuestionNumbers] = useState<number[]>([]);
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
 
   const [draft, setDraft] = useState("");
@@ -43,6 +45,15 @@ const [userId, setUserId] = useState<string>("");
     () => answerRow?.status === "submitted",
     [answerRow],
   );
+  // ===== ANCHOR: question-page-prev-next-computed =====
+const { prevNum, nextNum } = useMemo(() => {
+  const nums = allQuestionNumbers;
+  const idx = nums.indexOf(questionNumber);
+  return {
+    prevNum: idx > 0 ? nums[idx - 1] : null,
+    nextNum: idx >= 0 && idx < nums.length - 1 ? nums[idx + 1] : null,
+  };
+}, [allQuestionNumbers, questionNumber]);
 
   useEffect(() => {
     // ===== ANCHOR: question-page-supabase-null-guard =====
@@ -96,6 +107,18 @@ setUserId(session.user.id);
       }
 
       const q = qData as QuestionRow;
+      // ===== ANCHOR: question-page-load-question-numbers =====
+const { data: numsData, error: numsErr } = await supabase
+  .from("questions")
+  .select("question_number")
+  .order("question_number", { ascending: true });
+
+if (!numsErr) {
+  const nums = (numsData ?? [])
+    .map((r: any) => Number(r?.question_number))
+    .filter((n) => Number.isFinite(n));
+  setAllQuestionNumbers(nums);
+}
 
       // 3) Load this student's answer row (if any)
       const { data: aData, error: aErr } = await supabase
@@ -130,10 +153,14 @@ setUserId(session.user.id);
     };
   }, [router, questionNumber]);
 
-  // ===== ANCHOR: question-page-save-draft =====
-  async function saveDraft() {
-    if (!supabase) return;
-    if (!question) return;
+  // ===== ANCHOR: question-page-save-draft-returns-boolean =====
+async function saveDraft(): Promise<boolean> {
+    if (!supabase) return false;
+if (!question) return false;
+if (!userId) {
+  setStatusText("Still loading your account. Try again in a moment.");
+  return false;
+}
 
     setStatusText("Saving draft...");
 
@@ -153,12 +180,13 @@ const payload = {
       .single();
 
     if (error) {
-      setStatusText(`❌ Could not save: ${error.message}`);
-      return;
-    }
+  setStatusText(`❌ Could not save: ${error.message}`);
+  return false;
+}
 
     setAnswerRow(data as any);
     setStatusText("✅ Draft saved");
+  return true;
   }
 
   // ===== ANCHOR: question-page-submit-final =====
