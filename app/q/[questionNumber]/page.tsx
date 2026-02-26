@@ -188,7 +188,12 @@ const payload = {
     setStatusText("✅ Draft saved");
   return true;
   }
-
+// ===== ANCHOR: question-page-save-and-next =====
+async function saveAndNext() {
+  const ok = await saveDraft();
+  if (!ok) return;
+  if (nextNum) router.push(`/q/${nextNum}`);
+}
   // ===== ANCHOR: question-page-submit-final =====
   async function submitFinal() {
     if (!supabase) return;
@@ -322,6 +327,19 @@ const payload = {
               >
                 Save Draft
               </button>
+              <button
+  onClick={saveAndNext}
+  disabled={!nextNum || isSubmitted}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #333",
+    cursor: !nextNum || isSubmitted ? "not-allowed" : "pointer",
+    opacity: !nextNum || isSubmitted ? 0.5 : 1,
+  }}
+>
+  Save &amp; Next
+</button>
 
               <button
                 onClick={submitFinal}
