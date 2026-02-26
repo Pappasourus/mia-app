@@ -42,10 +42,15 @@ export default function DashboardPage() {
     };
   }, [router]);
 
-  async function handleSignOut() {
-    await supabase.auth.signOut();
+  // ===== ANCHOR: dashboard-signout-null-guard =====
+async function handleSignOut() {
+  if (!supabase) {
     router.push("/login");
+    return;
   }
+  await supabase.auth.signOut();
+  router.push("/login");
+}
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
