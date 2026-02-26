@@ -8,7 +8,11 @@ export default function SupabaseTestPage() {
 
   useEffect(() => {
     let cancelled = false;
-
+// ===== ANCHOR: supabase-test-null-guard =====
+if (!supabase) {
+  setStatus("Supabase is not configured (missing env vars).");
+  return;
+}
     (async () => {
       try {
         // Query a table that doesn't exist yet.
