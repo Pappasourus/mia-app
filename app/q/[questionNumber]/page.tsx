@@ -233,8 +233,26 @@ const payload = {
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 980 }}>
+    <main
+  style={{
+    padding: 24,
+    fontFamily: "system-ui",
+  }}
+>
+  {/* ===== ANCHOR: question-page-2col-layout ===== */}
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "1fr 300px",
+      gap: 16,
+      maxWidth: 1200,
+      margin: "0 auto",
+      alignItems: "start",
+    }}
+  >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+        {/* ===== ANCHOR: question-page-left-col ===== */}
+<div>
         <div>
           <div style={{ fontSize: 14, opacity: 0.75 }}>
             Logged in as: <b>{email || "…"}</b>
@@ -364,9 +382,122 @@ const payload = {
                 {statusText}
               </p>
             ) : null}
+            </div>
+          {/* ===== ANCHOR: question-page-right-guidance ===== */}
+<aside
+  style={{
+    border: "1px solid #ddd",
+    borderRadius: 12,
+    padding: 12,
+    position: "sticky",
+    top: 16,
+  }}
+>
+  <div style={{ fontWeight: 900, marginBottom: 10 }}>Guidance</div>
+
+  <div style={{ display: "flex", gap: 10, fontSize: 13, marginBottom: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          display: "inline-block",
+          borderRadius: 3,
+          background: "#2f7d32",
+        }}
+      />
+      Attempted
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          width: 10,
+          height: 10,
+          display: "inline-block",
+          borderRadius: 3,
+          background: "#999",
+        }}
+      />
+      Not Attempted
+    </div>
+  </div>
+
+  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+    Questions
+  </div>
+
+  <div
+    style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(5, 1fr)",
+      gap: 8,
+    }}
+  >
+    {(allQuestionNumbers.length ? allQuestionNumbers : [questionNumber]).map(
+      (n) => {
+        const isCurrent = n === questionNumber;
+        const attempted = isCurrent ? (draft?.trim()?.length ?? 0) > 0 : false;
+
+        return (
+          <button
+            key={n}
+            onClick={() => router.push(`/q/${n}`)}
+            style={{
+              padding: "8px 0",
+              borderRadius: 10,
+              border: isCurrent ? "2px solid #000" : "1px solid #bbb",
+              cursor: "pointer",
+              background: attempted ? "#2f7d32" : "#999",
+              color: "#fff",
+              fontWeight: 900,
+            }}
+            title={isCurrent ? "Current question" : `Go to Q${n}`}
+          >
+            {n}
+          </button>
+        );
+      },
+    )}
+  </div>
+
+  <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+    <button
+      onClick={saveDraft}
+      disabled={isSubmitted}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        cursor: isSubmitted ? "not-allowed" : "pointer",
+        opacity: isSubmitted ? 0.5 : 1,
+      }}
+    >
+      Save
+    </button>
+
+    <button
+      onClick={() => router.push("/questions")}
+      style={{
+        flex: 1,
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "1px solid #333",
+        cursor: "pointer",
+      }}
+    >
+      Finish
+    </button>
+  </div>
+
+  <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
+    Text size + “Text BG” controls will be added after MVP.
+  </div>
+</aside>
           </div>
         </div>
       ) : null}
-    </main>
+      </div>
+</main>
   );
 }
