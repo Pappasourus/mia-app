@@ -28,6 +28,8 @@ export default function QuestionsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState<string>("");
+  // ===== ANCHOR: questions-list-userid-state =====
+const [userId, setUserId] = useState<string>("");
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -66,6 +68,8 @@ export default function QuestionsPage() {
       if (cancelled) return;
 
       setEmail(session.user.email ?? "");
+      // ===== ANCHOR: questions-list-store-userid =====
+setUserId(session.user.id);
 
       // 2) Load questions
       const { data: qData, error: qErr } = await supabase
@@ -81,10 +85,11 @@ export default function QuestionsPage() {
 
       const qRows = (qData ?? []) as QuestionRow[];
 
-      // 3) Load this student's answers (RLS keeps it private)
-      const { data: aData, error: aErr } = await supabase
-        .from("answers")
-        .select("question_id, status");
+     // ===== ANCHOR: questions-list-load-answers-for-user =====
+const { data: aData, error: aErr } = await supabase
+  .from("answers")
+  .select("question_id, status")
+  .eq("student_user_id", session.user.id);
 
       if (aErr) {
         setErrorMsg(`Could not load answers: ${aErr.message}`);
