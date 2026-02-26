@@ -31,6 +31,8 @@ export default function QuestionPage() {
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   const [email, setEmail] = useState<string>("");
+  // ===== ANCHOR: question-page-userid-state =====
+const [userId, setUserId] = useState<string>("");
   const [question, setQuestion] = useState<QuestionRow | null>(null);
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
 
@@ -77,6 +79,8 @@ export default function QuestionPage() {
       if (cancelled) return;
 
       setEmail(session.user.email ?? "");
+      // ===== ANCHOR: question-page-store-userid =====
+setUserId(session.user.id);
 
       // 2) Load this question by number
       const { data: qData, error: qErr } = await supabase
@@ -133,13 +137,14 @@ export default function QuestionPage() {
 
     setStatusText("Saving draft...");
 
-    // Ensure a row exists (upsert)
-    const payload = {
-      question_id: question.id,
-      status: "draft",
-      draft_text: draft,
-      draft_updated_at: new Date().toISOString(),
-    };
+    // ===== ANCHOR: question-page-save-draft-payload-with-user =====
+const payload = {
+  question_id: question.id,
+  student_user_id: userId,
+  status: "draft",
+  draft_text: draft,
+  draft_updated_at: new Date().toISOString(),
+};
 
     const { data, error } = await supabase
       .from("answers")
@@ -168,16 +173,17 @@ export default function QuestionPage() {
 
     setStatusText("Submitting...");
 
-    const payload = {
-      question_id: question.id,
-      status: "submitted",
-      submitted_text: draft,
-      submitted_at: new Date().toISOString(),
-      // also keep draft_text in sync for now
-      draft_text: draft,
-      draft_updated_at: new Date().toISOString(),
-    };
-
+    // ===== ANCHOR: question-page-submit-final-payload-with-user =====
+const payload = {
+  question_id: question.id,
+  student_user_id: userId,
+  status: "submitted",
+  submitted_text: draft,
+  submitted_at: new Date().toISOString(),
+  // also keep draft_text in sync for now
+  draft_text: draft,
+  draft_updated_at: new Date().toISOString(),
+};
     const { data, error } = await supabase
       .from("answers")
       .upsert(payload, { onConflict: "question_id,student_user_id" })
