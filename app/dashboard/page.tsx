@@ -9,10 +9,16 @@ export default function DashboardPage() {
   const [email, setEmail] = useState<string>("Checking session...");
 
   useEffect(() => {
-    let unsub: any = null;
+  let unsub: any = null;
 
-    (async () => {
-      const { data } = await supabase.auth.getSession();
+  // ===== ANCHOR: dashboard-supabase-null-guard =====
+  if (!supabase) {
+    setEmail("Supabase is not configured (missing env vars).");
+    return;
+  }
+
+  (async () => {
+    const { data } = await supabase.auth.getSession();
       const userEmail = data.session?.user?.email ?? null;
 
       if (!userEmail) {
