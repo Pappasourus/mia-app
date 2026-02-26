@@ -9,6 +9,18 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string>("");
+  // ===== ANCHOR: login-supabase-null-guard =====
+if (!supabase) {
+  return (
+    <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 520 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Login</h1>
+      <p style={{ marginTop: 12 }}>
+        Supabase is not configured (missing env vars). Please check Vercel →
+        Settings → Environment Variables.
+      </p>
+    </main>
+  );
+}
 
   async function handleSignIn() {
     setStatus("Signing in...");
