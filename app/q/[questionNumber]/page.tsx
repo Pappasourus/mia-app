@@ -36,7 +36,15 @@ const [userId, setUserId] = useState<string>("");
   const [question, setQuestion] = useState<QuestionRow | null>(null);
   // ===== ANCHOR: question-page-all-question-numbers-state =====
 const [allQuestionNumbers, setAllQuestionNumbers] = useState<number[]>([]);
+  // ===== ANCHOR: question-page-questionsIdByNumber-state =====
+const [questionsIdByNumber, setQuestionsIdByNumber] = useState<Record<number, string>>(
+  {},
+);
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
+  // ===== ANCHOR: question-page-status-map-state =====
+const [statusByQuestionId, setStatusByQuestionId] = useState<
+  Record<string, "not_started" | "draft" | "submitted">
+>({});
 
   const [draft, setDraft] = useState("");
   const [statusText, setStatusText] = useState<string>("");
@@ -92,6 +100,21 @@ const { prevNum, nextNum } = useMemo(() => {
       setEmail(session.user.email ?? "");
       // ===== ANCHOR: question-page-store-userid =====
 setUserId(session.user.id);
+      // ===== ANCHOR: question-page-load-all-statuses =====
+const { data: allAns, error: allAnsErr } = await supabase
+  .from("answers")
+  .select("question_id, status")
+  .eq("student_user_id", session.user.id);
+
+if (!allAnsErr) {
+  const map: Record<string, "not_started" | "draft" | "submitted"> = {};
+  for (const r of allAns ?? []) {
+    const qid = String((r as any).question_id ?? "");
+    const st = (r as any).status as any;
+    if (qid) map[qid] = st;
+  }
+  setStatusByQuestionId(map);
+}
 
       // 2) Load this question by number
       const { data: qData, error: qErr } = await supabase
@@ -108,16 +131,27 @@ setUserId(session.user.id);
 
       const q = qData as QuestionRow;
       // ===== ANCHOR: question-page-load-question-numbers =====
-const { data: numsData, error: numsErr } = await supabase
+// ===== ANCHOR: question-page-load-questions-index =====
+const { data: qIndex, error: qIndexErr } = await supabase
   .from("questions")
-  .select("question_number")
+  .select("id, question_number")
   .order("question_number", { ascending: true });
 
-if (!numsErr) {
-  const nums = (numsData ?? [])
+if (!qIndexErr) {
+  const nums = (qIndex ?? [])
     .map((r: any) => Number(r?.question_number))
     .filter((n) => Number.isFinite(n));
   setAllQuestionNumbers(nums);
+
+  const map: Record<number, string> = {};
+  for (const r of qIndex ?? []) {
+    const n = Number((r as any).question_number);
+    const id = String((r as any).id ?? "");
+    if (Number.isFinite(n) && id) map[n] = id;
+  }
+
+  // store on window? no. store in state below:
+  setQuestionsIdByNumber(map);
 }
 
       // 3) Load this student's answer row (if any)
@@ -451,7 +485,13 @@ const payload = {
           {(allQuestionNumbers.length ? allQuestionNumbers : [questionNumber]).map(
             (n) => {
               const isCurrent = n === questionNumber;
-              const attempted = isCurrent ? (draft?.trim()?.length ?? 0) > 0 : false;
+
+// If we know the question id, use real status; otherwise fall back.
+const qidForN = questionsIdByNumber[n]; // we’ll add this next line in Step 21E
+const st =
+  qidForN && statusByQuestionId[qidForN] ? statusByQuestionId[qidForN] : "not_started";
+
+const attempted = st === "draft" || st === "submitted";
 
               return (
                 <button
