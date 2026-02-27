@@ -182,7 +182,79 @@ export default function AdminAnswersPage() {
 
   const selectedStudentEmail =
     students.find((s) => s.user_id === selectedStudentId)?.email ?? "";
+// ===== ANCHOR: admin-answers-export-pdf =====
+function safePdfName(s: string) {
+  return (s || "student").replace(/[^a-z0-9]+/gi, "_").slice(0, 50);
+}
 
+async function exportSelectedStudentPdf() {
+  if (!selectedStudentId) {
+    setStatusMsg("Please select a student first.");
+    return;
+  }
+
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+  const margin = 40;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const maxW = pageW - margin * 2;
+
+  let y = margin;
+
+  doc.setFontSize(16);
+  doc.text("Student Answers", margin, y);
+  y += 22;
+
+  doc.setFontSize(11);
+  doc.text(`Student: ${selectedStudentEmail || selectedStudentId}`, margin, y);
+  y += 16;
+
+  doc.setFontSize(10);
+  doc.text(`Exported: ${new Date().toLocaleString()}`, margin, y);
+  y += 18;
+
+  const lineGap = 12;
+
+  for (const q of questions) {
+    const a = answerByQid.get(q.id);
+    const st = a?.status ?? "not_started";
+    const answerText =
+      st === "submitted" ? a?.submitted_text ?? "" : a?.draft_text ?? "";
+
+    // Page break if needed
+    if (y > pageH - margin - 40) {
+      doc.addPage();
+      y = margin;
+    }
+
+    doc.setFontSize(12);
+    doc.text(`Q${q.question_number}: ${q.title || ""} [${q.marks}]`, margin, y);
+    y += 14;
+
+    doc.setFontSize(10);
+    doc.text(`Status: ${labelStatus(st)}`, margin, y);
+    y += 14;
+
+    const body = answerText.trim() ? answerText : "(empty)";
+    const lines = doc.splitTextToSize(body, maxW);
+
+    doc.setFontSize(10);
+    for (const line of lines) {
+      if (y > pageH - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(String(line), margin, y);
+      y += lineGap;
+    }
+
+    y += 10; // extra space between questions
+  }
+
+  doc.save(`answers-${safePdfName(selectedStudentEmail)}.pdf`);
+}
   return (
     <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 1100 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -240,6 +312,19 @@ export default function AdminAnswersPage() {
                 </option>
               ))}
             </select>
+            <button
+  onClick={exportSelectedStudentPdf}
+  disabled={!selectedStudentId}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #333",
+    cursor: selectedStudentId ? "pointer" : "not-allowed",
+    opacity: selectedStudentId ? 1 : 0.5,
+  }}
+>
+  Export PDF
+</button>
 
             <div style={{ marginLeft: "auto", opacity: 0.8, fontSize: 13 }}>
               {statusMsg}
