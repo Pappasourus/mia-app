@@ -40,6 +40,8 @@ export default function QuestionPage() {
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   const [email, setEmail] = useState<string>("");
+  // ===== ANCHOR: question-page-candidateid-state =====
+const [candidateId, setCandidateId] = useState<string>("");
   // ===== ANCHOR: question-page-userid-state =====
 const [userId, setUserId] = useState<string>("");
   const [question, setQuestion] = useState<QuestionRow | null>(null);
@@ -113,6 +115,16 @@ const sb = supabase;
       setEmail(session.user.email ?? "");
       // ===== ANCHOR: question-page-store-userid =====
 setUserId(session.user.id);
+      // ===== ANCHOR: question-page-load-candidateid =====
+const { data: pData, error: pErr } = await sb
+  .from("profiles")
+  .select("candidate_id")
+  .eq("user_id", session.user.id)
+  .single();
+
+if (!pErr) {
+  setCandidateId(String((pData as any)?.candidate_id ?? ""));
+}
       // ===== ANCHOR: question-page-load-all-statuses =====
 const { data: allAns, error: allAnsErr } = await sb
   .from("answers")
@@ -334,6 +346,9 @@ const payload = {
           <div>
             <div style={{ fontSize: 14, opacity: 0.75 }}>
               Logged in as: <b>{email || "…"}</b>
+              <div style={{ fontSize: 14, opacity: 0.75, marginTop: 4 }}>
+  Candidate ID: <b>{candidateId || "—"}</b>
+</div>
             </div>
             <h1 style={{ fontSize: 24, fontWeight: 900, marginTop: 6 }}>
               Question {questionNumber}
