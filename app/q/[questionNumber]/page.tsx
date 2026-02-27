@@ -208,6 +208,8 @@ if (!mErr) {
         .from("answers")
         .select("id, question_id, student_user_id, status, draft_text, submitted_text")
         .eq("question_id", q.id)
+        // ===== ANCHOR: question-page-filter-answer-by-user =====
+.eq("student_user_id", session.user.id)
         .maybeSingle();
 
       if (aErr) {
