@@ -109,7 +109,7 @@ export default function AdminAnswersPage() {
       const { data: stuData, error: stuErr } = await sb
         .from("profiles")
         .select("user_id, email, role")
-        .eq("role", "// ===== ANCHOR: admin-answers-include-admins-in-picker =====
+      ===== ANCHOR: admin-answers-include-admins-in-picker =====
 .in("role", ["student", "admin"])")
         .order("email", { ascending: true });
 
