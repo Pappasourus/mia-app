@@ -107,11 +107,11 @@ export default function AdminAnswersPage() {
 
       // Load students
       const { data: stuData, error: stuErr } = await sb
-        .from("profiles")
-        .select("user_id, email, role")
-      ===== ANCHOR: admin-answers-include-admins-in-picker =====
-.in("role", ["student", "admin"])")
-        .order("email", { ascending: true });
+  .from("profiles")
+  .select("user_id, email, role")
+  // ===== ANCHOR: admin-answers-include-admins-in-picker =====
+  .in("role", ["student", "admin"])
+  .order("email", { ascending: true });
 
       if (stuErr) {
         setStatusMsg(`Could not load students: ${stuErr.message}`);
