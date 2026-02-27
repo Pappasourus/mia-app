@@ -322,6 +322,7 @@ export default function AdminAnswersPage() {
                               borderRadius: 12,
                               border: "1px solid #eee",
                               background: "#fafafa",
+                              color: "#111",
                               fontFamily: "inherit",
                             }}
                           >
