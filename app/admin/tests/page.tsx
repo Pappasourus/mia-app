@@ -24,6 +24,11 @@ export default function AdminTestsPage() {
   const [currentTestId, setCurrentTestId] = useState<string>("");
 
   const [newName, setNewName] = useState("");
+  // Delete flow (UI only for now)
+  const [deleteId, setDeleteId] = useState<string>("");
+  const [deleteName, setDeleteName] = useState<string>("");
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>("");
+  const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
 
   async function loadAll() {
     if (!sb) return;
@@ -139,6 +144,52 @@ export default function AdminTestsPage() {
     await setCurrent(String((data as any)?.id ?? ""));
   }
 
+  function openDelete(t: TestRow) {
+    setDeleteId(t.id);
+    setDeleteName(t.name);
+    setDeleteConfirmText("");
+    setDeleteOpen(true);
+    setStatus("");
+  }
+
+  function closeDelete() {
+    setDeleteOpen(false);
+    setDeleteId("");
+    setDeleteName("");
+    setDeleteConfirmText("");
+    setStatus("");
+  }
+
+  async function confirmDelete() {
+    if (!sb) return;
+
+    if (!deleteId) {
+      setStatus("❌ No test selected to delete.");
+      return;
+    }
+
+    if (deleteConfirmText !== "DELETE") {
+      setStatus("❌ Type DELETE to confirm.");
+      return;
+    }
+
+    setStatus("Deleting test…");
+
+    const { error } = await sb.rpc("admin_delete_test", {
+      p_test_id: deleteId,
+      p_confirm: "DELETE",
+    });
+
+    if (error) {
+      setStatus(`❌ Delete failed: ${error.message}`);
+      return;
+    }
+
+    setStatus("✅ Test deleted.");
+    closeDelete();
+    await loadAll();
+  }
+
   return (
     <main
       style={{
@@ -163,7 +214,9 @@ export default function AdminTestsPage() {
         style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
       >
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 900 }}>Admin: Tests</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 900 }}>
+  Admin: Tests <span style={{ fontSize: 12, opacity: 0.6 }}>(preview)</span>
+</h1>
           <div style={{ marginTop: 6, opacity: 0.75, fontSize: 14 }}>
             Logged in as: <b>{adminEmail || "…"}</b>
           </div>
@@ -230,6 +283,86 @@ export default function AdminTestsPage() {
             </div>
           </div>
 
+          {deleteOpen ? (
+            <div
+              style={{
+                marginTop: 18,
+                border: "1px solid #fecaca",
+                borderRadius: 12,
+                padding: 14,
+                background: "#fff1f2",
+                color: "#111827",
+              }}
+            >
+              <div style={{ fontWeight: 900, color: "#991b1b" }}>
+                Delete test (confirmation)
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 14 }}>
+                You are about to delete: <b>{deleteName || "(unknown)"}</b>
+              </div>
+
+              <div style={{ marginTop: 10, fontSize: 13, opacity: 0.9 }}>
+                Type <b>DELETE</b> to enable the final delete button.
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginTop: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <input
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE"
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #ccc",
+                    minWidth: 220,
+                  }}
+                />
+
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleteConfirmText !== "DELETE"}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #991b1b",
+                    background:
+                      deleteConfirmText === "DELETE" ? "#dc2626" : "#fca5a5",
+                    color: "white",
+                    cursor:
+                      deleteConfirmText === "DELETE"
+                        ? "pointer"
+                        : "not-allowed",
+                    fontWeight: 900,
+                    opacity: deleteConfirmText === "DELETE" ? 1 : 0.7,
+                  }}
+                >
+                  Confirm Delete
+                </button>
+
+                <button
+                  onClick={closeDelete}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #333",
+                    cursor: "pointer",
+                    background: "white",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div style={{ marginTop: 18 }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>All tests</div>
 
@@ -274,19 +407,42 @@ export default function AdminTestsPage() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => setCurrent(t.id)}
-                        disabled={isCurrent}
+                      <div
                         style={{
-                          padding: "8px 10px",
-                          borderRadius: 10,
-                          border: "1px solid #333",
-                          cursor: isCurrent ? "not-allowed" : "pointer",
-                          opacity: isCurrent ? 0.5 : 1,
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "center",
                         }}
                       >
-                        Set Current
-                      </button>
+                        <button
+                          onClick={() => setCurrent(t.id)}
+                          disabled={isCurrent}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #333",
+                            cursor: isCurrent ? "not-allowed" : "pointer",
+                            opacity: isCurrent ? 0.5 : 1,
+                          }}
+                        >
+                          Set Current
+                        </button>
+
+                        <button
+                          onClick={() => openDelete(t)}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #991b1b",
+                            background: "#fee2e2",
+                            color: "#991b1b",
+                            cursor: "pointer",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
