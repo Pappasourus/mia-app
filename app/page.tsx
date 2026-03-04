@@ -43,6 +43,61 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
+                {process.env.NODE_ENV === "development" ? (
+          <div className="rounded-lg border border-amber-700/40 bg-amber-900/10 p-4 space-y-3">
+            <div className="text-sm font-semibold text-amber-200">
+              Dev Quick Links (localhost only)
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <Link
+                href="/q/1"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Student: /q/1 (skip login if already signed in)
+              </Link>
+
+              <Link
+                href="/admin"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Admin Hub: /admin
+              </Link>
+
+              <Link
+                href="/admin/tests"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Test Builder: /admin/tests
+              </Link>
+
+              <Link
+                href="/admin/questions"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Questions: /admin/questions
+              </Link>
+
+              <Link
+                href="/admin/media"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Media: /admin/media
+              </Link>
+
+              <Link
+                href="/admin/answers"
+                className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-3 hover:bg-slate-900"
+              >
+                Answers: /admin/answers
+              </Link>
+            </div>
+
+            <div className="text-xs text-amber-200/80">
+              Tip: If you’re already logged in, these take you straight there.
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );
