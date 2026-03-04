@@ -1,0 +1,51 @@
+// app/ready/page.tsx
+import Link from "next/link";
+
+export const dynamic = "force-dynamic";
+
+export default function ReadyPage() {
+  const checks = [
+    "Student can sign in and see /questions",
+    "Student can open /q/1, save draft, submit final",
+    "Question media (image/video) renders correctly",
+    "Admin can CRUD questions",
+    "Admin can upload media to question-media bucket and attach to question",
+    "Admin can view answers for a selected user",
+    "Export PDF works for one user",
+    "Export ALL PDFs works (bulk download)",
+    "RLS is working (students can only see their own answers)",
+    "No console errors on key pages",
+  ];
+
+  return (
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
+      <div className="max-w-2xl mx-auto space-y-4">
+        <h1 className="text-2xl font-semibold">Ready-to-Deploy Checklist</h1>
+
+        <p className="text-sm text-slate-400">
+          Use this page while testing locally. When every item is true, we deploy.
+        </p>
+
+        <ul className="space-y-2">
+          {checks.map((c) => (
+            <li
+              key={c}
+              className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3"
+            >
+              ☐ {c}
+            </li>
+          ))}
+        </ul>
+
+        <div className="pt-2">
+          <Link
+            href="/links"
+            className="text-sm rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900 inline-block"
+          >
+            Back to /links
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}

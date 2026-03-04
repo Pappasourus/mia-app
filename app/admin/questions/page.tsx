@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import AdminGate from "../AdminGate";
 
 type QuestionRow = {
   id: string;
@@ -58,23 +59,20 @@ export default function AdminQuestionsPage() {
 
       setEmail(session.user.email ?? "");
 
-      // Check role
-      const { data: prof, error: profErr } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .single();
+      // Admin check via allowlist table (RPC)
+      const { data: isAdmin, error: adminErr } = await supabase.rpc(
+        "is_current_user_admin",
+      );
 
-      if (profErr) {
-        setStatus(`Could not load profile: ${profErr.message}`);
+      if (adminErr) {
+        setStatus(`Admin check failed: ${adminErr.message}`);
         setLoading(false);
         return;
       }
 
-      const admin = String((prof as any)?.role) === "admin";
-      setIsAdmin(admin);
+      setIsAdmin(Boolean(isAdmin));
 
-      if (!admin) {
+      if (!isAdmin) {
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
@@ -218,9 +216,6 @@ export default function AdminQuestionsPage() {
             Logged in as: <b>{email || "…"}</b>
           </div>
         </div>
-        <Link href="/questions" style={{ textDecoration: "none" }}>
-          ← Back to student view
-        </Link>
       </div>
 
       {loading ? (

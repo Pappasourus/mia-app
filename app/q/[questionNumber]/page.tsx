@@ -1,6 +1,6 @@
 "use client";
 // ===== ANCHOR: question-page =====
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
@@ -41,40 +41,48 @@ export default function QuestionPage() {
 
   const [email, setEmail] = useState<string>("");
   // ===== ANCHOR: question-page-candidateid-state =====
-const [candidateId, setCandidateId] = useState<string>("");
+  const [candidateId, setCandidateId] = useState<string>("");
   // ===== ANCHOR: question-page-userid-state =====
-const [userId, setUserId] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
   const [question, setQuestion] = useState<QuestionRow | null>(null);
   // ===== ANCHOR: question-page-all-question-numbers-state =====
-const [allQuestionNumbers, setAllQuestionNumbers] = useState<number[]>([]);
+  const [allQuestionNumbers, setAllQuestionNumbers] = useState<number[]>([]);
   // ===== ANCHOR: question-page-questionsIdByNumber-state =====
-const [questionsIdByNumber, setQuestionsIdByNumber] = useState<Record<number, string>>(
-  {},
-);
+  const [questionsIdByNumber, setQuestionsIdByNumber] = useState<
+    Record<number, string>
+  >({});
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
   // ===== ANCHOR: question-page-media-state =====
-const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   // ===== ANCHOR: question-page-status-map-state =====
-const [statusByQuestionId, setStatusByQuestionId] = useState<
-  Record<string, "not_started" | "draft" | "submitted">
->({});
+  const [statusByQuestionId, setStatusByQuestionId] = useState<
+    Record<string, "not_started" | "draft" | "submitted">
+  >({});
 
   const [draft, setDraft] = useState("");
   const [statusText, setStatusText] = useState<string>("");
+  const [isFinalized, setIsFinalized] = useState<boolean>(false);
+
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedDraftRef = useRef<string>("");
+  const isAutoSavingRef = useRef(false);
 
   const isSubmitted = useMemo(
     () => answerRow?.status === "submitted",
     [answerRow],
   );
+
+  const hasTypedContent = useMemo(() => draft.trim().length > 0, [draft]);
+
   // ===== ANCHOR: question-page-prev-next-computed =====
-const { prevNum, nextNum } = useMemo(() => {
-  const nums = allQuestionNumbers;
-  const idx = nums.indexOf(questionNumber);
-  return {
-    prevNum: idx > 0 ? nums[idx - 1] : null,
-    nextNum: idx >= 0 && idx < nums.length - 1 ? nums[idx + 1] : null,
-  };
-}, [allQuestionNumbers, questionNumber]);
+  const { prevNum, nextNum } = useMemo(() => {
+    const nums = allQuestionNumbers;
+    const idx = nums.indexOf(questionNumber);
+    return {
+      prevNum: idx > 0 ? nums[idx - 1] : null,
+      nextNum: idx >= 0 && idx < nums.length - 1 ? nums[idx + 1] : null,
+    };
+  }, [allQuestionNumbers, questionNumber]);
 
   useEffect(() => {
     // ===== ANCHOR: question-page-supabase-null-guard =====
@@ -86,9 +94,10 @@ const { prevNum, nextNum } = useMemo(() => {
       return;
     }
     // ===== ANCHOR: question-page-sb-alias =====
-const sb = supabase;
+    const sb = supabase;
 
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     (async () => {
       setLoading(true);
@@ -114,38 +123,151 @@ const sb = supabase;
 
       setEmail(session.user.email ?? "");
       // ===== ANCHOR: question-page-store-userid =====
-setUserId(session.user.id);
+      setUserId(session.user.id);
+      // Load + poll finalized status (locks students if admin finalizes mid-test)
+      async function fetchFinalized() {
+        // Find current test
+        const { data: settings } = await sb
+          .from("app_settings")
+          .select("current_test_id")
+          .eq("id", 1)
+          .maybeSingle();
+
+        const testId = String((settings as any)?.current_test_id ?? "");
+
+        if (!testId) {
+          setIsFinalized(false);
+          return false;
+        }
+
+        // Read test finalized flag
+        const { data: t } = await sb
+          .from("tests")
+          .select("is_finalized")
+          .eq("id", testId)
+          .maybeSingle();
+
+        const finalized = Boolean((t as any)?.is_finalized);
+        setIsFinalized(finalized);
+        return finalized;
+      }
+
+      // initial load
+      await fetchFinalized();
+
+      // poll every 5s while on this page
+      intervalId = setInterval(() => {
+        fetchFinalized();
+      }, 5000);
+
       // ===== ANCHOR: question-page-load-candidateid =====
-const { data: pData, error: pErr } = await sb
-  .from("profiles")
-  .select("candidate_id")
-  .eq("user_id", session.user.id)
-  .single();
+      const { data: pData, error: pErr } = await sb
+        .from("profiles")
+        .select("candidate_id")
+        .eq("user_id", session.user.id)
+        .single();
 
-if (!pErr) {
-  setCandidateId(String((pData as any)?.candidate_id ?? ""));
-}
+      if (!pErr) {
+        setCandidateId(String((pData as any)?.candidate_id ?? ""));
+      }
+
       // ===== ANCHOR: question-page-load-all-statuses =====
-const { data: allAns, error: allAnsErr } = await sb
-  .from("answers")
-  .select("question_id, status")
-  .eq("student_user_id", session.user.id);
+      const { data: allAns, error: allAnsErr } = await sb
+        .from("answers")
+        .select("question_id, status")
+        .eq("student_user_id", session.user.id);
 
-if (!allAnsErr) {
-  const map: Record<string, "not_started" | "draft" | "submitted"> = {};
-  for (const r of allAns ?? []) {
-    const qid = String((r as any).question_id ?? "");
-    const st = (r as any).status as any;
-    if (qid) map[qid] = st;
-  }
-  setStatusByQuestionId(map);
-}
+      if (!allAnsErr) {
+        const map: Record<string, "not_started" | "draft" | "submitted"> = {};
+        for (const r of allAns ?? []) {
+          const qid = String((r as any).question_id ?? "");
+          const st = (r as any).status as any;
+          if (qid) map[qid] = st;
+        }
+        setStatusByQuestionId(map);
+      }
 
-      // 2) Load this question by number
+      // 2) Load current test mapping (sort_order -> question_id), then load this question
+      const { data: settingsData, error: settingsErr } = await sb
+        .from("app_settings")
+        .select("current_test_id")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (settingsErr) {
+        setErrorMsg(`Could not load app settings: ${settingsErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const currentTestId = String(
+        (settingsData as any)?.current_test_id ?? "",
+      );
+
+      // Build navigation map from current test
+      let qidForThisPage = "";
+
+      if (currentTestId) {
+        const { data: tqData, error: tqErr } = await sb
+          .from("test_questions")
+          .select("question_id, sort_order")
+          .eq("test_id", currentTestId)
+          .order("sort_order", { ascending: true });
+
+        if (!tqErr && tqData?.length) {
+          const nums = (tqData ?? [])
+            .map((r: any) => Number(r?.sort_order))
+            .filter((n) => Number.isFinite(n));
+          setAllQuestionNumbers(nums);
+
+          const map: Record<number, string> = {};
+          for (const r of tqData ?? []) {
+            const n = Number((r as any)?.sort_order);
+            const id = String((r as any)?.question_id ?? "");
+            if (Number.isFinite(n) && id) map[n] = id;
+          }
+          setQuestionsIdByNumber(map);
+
+          qidForThisPage = map[questionNumber] ?? "";
+        }
+      }
+
+      // Fallback: if no current test (or missing mapping), use old behavior
+      if (!qidForThisPage) {
+        const { data: qIndex, error: qIndexErr } = await sb
+          .from("questions")
+          .select("id, question_number")
+          .order("question_number", { ascending: true });
+
+        if (!qIndexErr) {
+          const nums = (qIndex ?? [])
+            .map((r: any) => Number(r?.question_number))
+            .filter((n) => Number.isFinite(n));
+          setAllQuestionNumbers(nums);
+
+          const map: Record<number, string> = {};
+          for (const r of qIndex ?? []) {
+            const n = Number((r as any).question_number);
+            const id = String((r as any).id ?? "");
+            if (Number.isFinite(n) && id) map[n] = id;
+          }
+          setQuestionsIdByNumber(map);
+
+          qidForThisPage = map[questionNumber] ?? "";
+        }
+      }
+
+      if (!qidForThisPage) {
+        setErrorMsg("Question not found in current test.");
+        setLoading(false);
+        return;
+      }
+
+      // Load the question by ID (works for both modes)
       const { data: qData, error: qErr } = await sb
         .from("questions")
         .select("id, question_number, title, prompt, marks")
-        .eq("question_number", questionNumber)
+        .eq("id", qidForThisPage)
         .single();
 
       if (qErr || !qData) {
@@ -155,61 +277,42 @@ if (!allAnsErr) {
       }
 
       const q = qData as QuestionRow;
-      // ===== ANCHOR: question-page-load-question-numbers =====
-// ===== ANCHOR: question-page-load-questions-index =====
-const { data: qIndex, error: qIndexErr } = await sb
-  .from("questions")
-  .select("id, question_number")
-  .order("question_number", { ascending: true });
 
-if (!qIndexErr) {
-  const nums = (qIndex ?? [])
-    .map((r: any) => Number(r?.question_number))
-    .filter((n) => Number.isFinite(n));
-  setAllQuestionNumbers(nums);
+      // ===== ANCHOR: question-page-load-media =====
+      const { data: mData, error: mErr } = await sb
+        .from("question_media")
+        .select("id, kind, bucket, path, caption, sort_order")
+        .eq("question_id", q.id)
+        .order("sort_order", { ascending: true });
 
-  const map: Record<number, string> = {};
-  for (const r of qIndex ?? []) {
-    const n = Number((r as any).question_number);
-    const id = String((r as any).id ?? "");
-    if (Number.isFinite(n) && id) map[n] = id;
-  }
+      if (!mErr) {
+        const items: MediaItem[] = (mData ?? []).map((m: any) => {
+          const bucket = String(m?.bucket ?? "question-media");
+          const path = String(m?.path ?? "");
+          const pub = sb.storage.from(bucket).getPublicUrl(path);
+          const url = String(pub?.data?.publicUrl ?? "");
 
-  // store on window? no. store in state below:
-  setQuestionsIdByNumber(map);
-}
-// ===== ANCHOR: question-page-load-media =====
-const { data: mData, error: mErr } = await sb
-  .from("question_media")
-  .select("id, kind, bucket, path, caption, sort_order")
-  .eq("question_id", q.id)
-  .order("sort_order", { ascending: true });
+          return {
+            id: String(m?.id ?? ""),
+            kind: (m?.kind as "image" | "video") ?? "image",
+            url,
+            caption: String(m?.caption ?? ""),
+            sort_order: Number(m?.sort_order ?? 0),
+          };
+        });
 
-if (!mErr) {
-  const items: MediaItem[] = (mData ?? []).map((m: any) => {
-    const bucket = String(m?.bucket ?? "question-media");
-    const path = String(m?.path ?? "");
-    const pub = sb.storage.from(bucket).getPublicUrl(path);
-    const url = String(pub?.data?.publicUrl ?? "");
+        setMediaItems(items.filter((x) => x.id && x.url));
+      }
 
-    return {
-      id: String(m?.id ?? ""),
-      kind: (m?.kind as "image" | "video") ?? "image",
-      url,
-      caption: String(m?.caption ?? ""),
-      sort_order: Number(m?.sort_order ?? 0),
-    };
-  });
-
-  setMediaItems(items.filter((x) => x.id && x.url));
-}
       // 3) Load this student's answer row (if any)
       const { data: aData, error: aErr } = await sb
         .from("answers")
-        .select("id, question_id, student_user_id, status, draft_text, submitted_text")
+        .select(
+          "id, question_id, student_user_id, status, draft_text, submitted_text",
+        )
         .eq("question_id", q.id)
         // ===== ANCHOR: question-page-filter-answer-by-user =====
-.eq("student_user_id", session.user.id)
+        .eq("student_user_id", session.user.id)
         .maybeSingle();
 
       if (aErr) {
@@ -226,467 +329,956 @@ if (!mErr) {
 
       const startingDraft =
         (aData as any)?.status === "submitted"
-          ? (aData as any)?.submitted_text ?? ""
-          : (aData as any)?.draft_text ?? "";
+          ? ((aData as any)?.submitted_text ?? "")
+          : ((aData as any)?.draft_text ?? "");
 
       setDraft(startingDraft);
+      lastSavedDraftRef.current = startingDraft;
       setLoading(false);
     })();
 
     return () => {
       cancelled = true;
+      if (intervalId) clearInterval(intervalId);
     };
   }, [router, questionNumber]);
 
   // ===== ANCHOR: question-page-save-draft-returns-boolean =====
-async function saveDraft(): Promise<boolean> {
+  async function saveDraft(opts?: {
+    silent?: boolean;
+    overrideText?: string;
+  }): Promise<boolean> {
     if (!supabase) return false;
-if (!question) return false;
-if (!userId) {
-  setStatusText("Still loading your account. Try again in a moment.");
-  return false;
-}
+    if (!question) return false;
+    if (isFinalized) {
+      setStatusText(
+        "❌ This test has been finalized. You can’t submit changes.",
+      );
+      return false;
+    }
+    if (!userId) {
+      if (!opts?.silent) {
+        setStatusText("Still loading your account. Try again in a moment.");
+      }
+      return false;
+    }
 
-    setStatusText("Saving draft...");
+    const textToSave = opts?.overrideText ?? draft;
+
+    if (!opts?.silent) {
+      setStatusText("Saving draft...");
+    }
 
     // ===== ANCHOR: question-page-save-draft-payload-with-user =====
-const payload = {
-  question_id: question.id,
-  student_user_id: userId,
-  status: "draft",
-  draft_text: draft,
-  draft_updated_at: new Date().toISOString(),
-};
+    const payload = {
+      question_id: question.id,
+      student_user_id: userId,
+      status: "draft",
+      draft_text: textToSave,
+      draft_updated_at: new Date().toISOString(),
+    };
 
     const { data, error } = await supabase
       .from("answers")
       .upsert(payload, { onConflict: "question_id,student_user_id" })
-      .select("id, question_id, student_user_id, status, draft_text, submitted_text")
+      .select(
+        "id, question_id, student_user_id, status, draft_text, submitted_text",
+      )
       .single();
 
     if (error) {
-  setStatusText(`❌ Could not save: ${error.message}`);
-  return false;
-}
+      if (!opts?.silent) {
+        setStatusText(`❌ Could not save: ${error.message}`);
+      }
+      return false;
+    }
 
     setAnswerRow(data as any);
-    setStatusText("✅ Draft saved");
-  return true;
+    lastSavedDraftRef.current = textToSave;
+
+    setStatusByQuestionId((prev) => ({
+      ...prev,
+      [question.id]: textToSave.trim() ? "draft" : "not_started",
+    }));
+
+    if (!opts?.silent) {
+      setStatusText("✅ Draft saved");
+    }
+
+    return true;
   }
-// ===== ANCHOR: question-page-save-and-next =====
-async function saveAndNext() {
-  const ok = await saveDraft();
-  if (!ok) return;
-  if (nextNum) router.push(`/q/${nextNum}`);
-}
-  // ===== ANCHOR: question-page-submit-final =====
-  async function submitFinal() {
-    if (!supabase) return;
-    if (!question) return;
 
-    const ok = window.confirm(
-      "Submit final answer? You can still edit later in our MVP, but we will lock this down later to match the video.",
-    );
+  // ===== ANCHOR: question-page-save-and-next =====
+  async function saveAndNext() {
+    const ok = await saveDraft();
     if (!ok) return;
+    if (nextNum) router.push(`/q/${nextNum}`);
+  }
 
-    setStatusText("Submitting...");
+  // ===== ANCHOR: question-page-submit-final =====
+  async function submitFinal(opts?: {
+    goHomeAfter?: boolean;
+  }): Promise<boolean> {
+    if (!supabase) return false;
+    if (!question) return false;
+    if (!userId) return false;
 
-    // ===== ANCHOR: question-page-submit-final-payload-with-user =====
-const payload = {
-  question_id: question.id,
-  student_user_id: userId,
-  status: "submitted",
-  submitted_text: draft,
-  submitted_at: new Date().toISOString(),
-  // also keep draft_text in sync for now
-  draft_text: draft,
-  draft_updated_at: new Date().toISOString(),
-};
+    const payload = {
+      question_id: question.id,
+      student_user_id: userId,
+      status: "submitted",
+      submitted_text: draft,
+      submitted_at: new Date().toISOString(),
+      draft_text: draft,
+      draft_updated_at: new Date().toISOString(),
+    };
+
     const { data, error } = await supabase
       .from("answers")
       .upsert(payload, { onConflict: "question_id,student_user_id" })
-      .select("id, question_id, student_user_id, status, draft_text, submitted_text")
+      .select(
+        "id, question_id, student_user_id, status, draft_text, submitted_text",
+      )
       .single();
 
     if (error) {
       setStatusText(`❌ Could not submit: ${error.message}`);
-      return;
+      return false;
     }
 
     setAnswerRow(data as any);
+    lastSavedDraftRef.current = draft;
+
+    setStatusByQuestionId((prev) => ({
+      ...prev,
+      [question.id]: "submitted",
+    }));
+
     setStatusText("✅ Submitted");
+
+    if (opts?.goHomeAfter) {
+      router.push("/");
+    }
+
+    return true;
+  }
+
+  // ===== ANCHOR: question-page-finish-with-confirmation =====
+  async function finishWithConfirmation() {
+    const confirmed = window.confirm(
+      "Are you sure you want to finish? This will submit your final answer and return you to Home.",
+    );
+    if (isFinalized) {
+      setStatusText(
+        "❌ This test has been finalized. Your last saved work was submitted.",
+      );
+      router.push("/");
+      return;
+    }
+    if (!confirmed) return;
+    await submitFinal({ goHomeAfter: true });
+  }
+
+  // ===== ANCHOR: question-page-auto-save-draft =====
+  useEffect(() => {
+    if (loading) return;
+    if (!question) return;
+    if (!userId) return;
+    if (isSubmitted) return;
+
+    if (!hasTypedContent) {
+      setStatusByQuestionId((prev) => ({
+        ...prev,
+        [question.id]: "not_started",
+      }));
+      return;
+    }
+
+    if (draft === lastSavedDraftRef.current) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (isAutoSavingRef.current) return;
+      isAutoSavingRef.current = true;
+      await saveDraft({ silent: true });
+      isAutoSavingRef.current = false;
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [draft, loading, question, userId, isSubmitted, hasTypedContent]);
+
+  // ===== ANCHOR: question-page-status-preview-sync =====
+  useEffect(() => {
+    if (!question) return;
+
+    setStatusByQuestionId((prev) => {
+      const currentSaved = prev[question.id];
+
+      if (isSubmitted) {
+        if (currentSaved === "submitted") return prev;
+        return { ...prev, [question.id]: "submitted" };
+      }
+
+      const previewStatus = draft.trim() ? "draft" : "not_started";
+      if (currentSaved === previewStatus) return prev;
+      return { ...prev, [question.id]: previewStatus };
+    });
+  }, [draft, question, isSubmitted]);
+
+  function getTileState(n: number): "submitted" | "draft" | "not_started" {
+    const qidForN = questionsIdByNumber[n];
+    return qidForN && statusByQuestionId[qidForN]
+      ? statusByQuestionId[qidForN]
+      : "not_started";
   }
 
   return (
-  <main
-    style={{
-      padding: 24,
-      fontFamily: "system-ui",
-    }}
-  >
-    {/* ===== ANCHOR: question-page-2col-layout ===== */}
-    <div
+    <main
       style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 300px",
-        gap: 16,
-        maxWidth: 1200,
-        margin: "0 auto",
-        alignItems: "start",
+        minHeight: "100vh",
+        background: "#d9d9d9",
+        color: "#111",
+        fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {/* ===== ANCHOR: question-page-left-col ===== */}
-      <div>
+      <header
+        style={{
+          height: 28,
+          position: "relative",
+          background: "linear-gradient(180deg, #33c2cd 0%, #2eb8c2 100%)",
+          borderBottom: "1px solid rgba(0,0,0,0.18)",
+          overflow: "hidden",
+        }}
+      >
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 112,
+            overflow: "hidden",
           }}
         >
-          <div>
-            <div style={{ fontSize: 14, opacity: 0.75 }}>
-              Logged in as: <b>{email || "…"}</b>
-              <div style={{ fontSize: 14, opacity: 0.75, marginTop: 4 }}>
-  Candidate ID: <b>{candidateId || "—"}</b>
-</div>
-            </div>
-            <h1 style={{ fontSize: 24, fontWeight: 900, marginTop: 6 }}>
-              Question {questionNumber}
-            </h1>
+          <div
+            style={{
+              position: "absolute",
+              left: -12,
+              top: 0,
+              width: 36,
+              height: "100%",
+              background: "#8cc63f",
+              transform: "skewX(-35deg)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 17,
+              top: 0,
+              width: 22,
+              height: "100%",
+              background: "#f3e32a",
+              transform: "skewX(-35deg)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 34,
+              top: 0,
+              width: 22,
+              height: "100%",
+              background: "#7b4fa3",
+              transform: "skewX(-35deg)",
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "repeating-linear-gradient(60deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 22px)",
+            pointerEvents: "none",
+          }}
+        />
+
+        <div
+          style={{
+            maxWidth: 1400,
+            height: "100%",
+            margin: "0 auto",
+            padding: "0 10px 0 0",
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "center",
+            color: "#fff",
+            fontSize: 11,
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          <div
+            style={{
+              paddingLeft: 86,
+              fontSize: 11,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Moving Image Arts
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <Link href="/questions" style={{ textDecoration: "none" }}>
-              ← Back to list
+          <div
+            style={{
+              justifySelf: "center",
+              fontSize: 11,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Exam Simulator
+          </div>
+
+          <div
+            style={{
+              justifySelf: "end",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              whiteSpace: "nowrap",
+              fontSize: 10,
+            }}
+          >
+            <span>Candidate: {candidateId || "—"}</span>
+            <Link
+              href="/"
+              style={{
+                color: "#fff",
+                textDecoration: "none",
+                border: "1px solid rgba(255,255,255,0.45)",
+                background: "rgba(0,0,0,0.14)",
+                padding: "1px 7px",
+                lineHeight: 1.2,
+              }}
+            >
+              Home
             </Link>
           </div>
         </div>
+      </header>
 
-        {loading ? (
-          <p style={{ marginTop: 18 }}>Loading…</p>
-        ) : errorMsg ? (
-          <p style={{ marginTop: 18, color: "crimson" }}>{errorMsg}</p>
-        ) : question ? (
-          <div style={{ marginTop: 18 }}>
-            <div
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 12,
-                padding: 14,
-              }}
-            >
-              <div style={{ fontWeight: 900, fontSize: 18 }}>
-                {question.title}{" "}
-                <span style={{ fontWeight: 700, opacity: 0.7 }}>
-                  [{question.marks}]
-                </span>
-              </div>
+      <div
+        style={{
+          maxWidth: 1400,
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 158px",
+          gap: 0,
+        }}
+      >
+        {/* ===== ANCHOR: question-page-left-col ===== */}
+        <div
+          style={{
+            minHeight: "calc(100vh - 28px)",
+            borderRight: "1px solid #bababa",
+            padding: "14px 14px 0 14px",
+            position: "relative",
+            background: "#d9d9d9",
+          }}
+        >
+          {loading ? (
+            <p style={{ marginTop: 18, fontSize: 13 }}>Loading…</p>
+          ) : errorMsg ? (
+            <p style={{ marginTop: 18, color: "crimson", fontSize: 13 }}>
+              {errorMsg}
+            </p>
+          ) : question ? (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    background: "#35c0cd",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 18,
+                    fontWeight: 400,
+                    flexShrink: 0,
+                  }}
+                >
+                  {questionNumber}
+                </div>
 
-              <div style={{ marginTop: 10, lineHeight: 1.5 }}>
-                {question.prompt}
+                <div
+                  style={{
+                    fontSize: 19,
+                    lineHeight: 1.3,
+                    paddingTop: 5,
+                    color: "#202020",
+                    maxWidth: 980,
+                  }}
+                >
+                  <span style={{ fontWeight: 400 }}>{question.title}</span>
+                  {question.prompt ? (
+                    <span style={{ fontWeight: 400 }}> {question.prompt}</span>
+                  ) : null}
+                  <span
+                    style={{
+                      marginLeft: 16,
+                      fontWeight: 700,
+                      color: "#111",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    [{question.marks}]
+                  </span>
+                </div>
               </div>
 
               {/* ===== ANCHOR: question-page-media-render ===== */}
-{mediaItems.length === 0 ? (
-  <div
-    style={{
-      marginTop: 14,
-      padding: 12,
-      borderRadius: 10,
-      border: "1px dashed #bbb",
-      opacity: 0.8,
-      fontSize: 13,
-    }}
-  >
-    No media attached to this question yet.
-  </div>
-) : (
-  <div
-    style={{
-      marginTop: 14,
-      display: "grid",
-      gridTemplateColumns: mediaItems.length >= 2 ? "1fr 1fr" : "1fr",
-      gap: 10,
-    }}
-  >
-    {mediaItems.map((m) => (
-      <div
-        key={m.id}
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: 10,
-        }}
-      >
-        {m.kind === "image" ? (
-          <img
-            src={m.url}
-            alt={m.caption || "Question media"}
-            style={{ width: "100%", borderRadius: 10, display: "block" }}
-          />
-        ) : (
-          <video
-            src={m.url}
-            controls
-            style={{ width: "100%", borderRadius: 10, display: "block" }}
-          />
-        )}
+              {mediaItems.length === 0 ? (
+                <div
+                  style={{
+                    width: "min(780px, 100%)",
+                    marginBottom: 14,
+                    padding: 10,
+                    border: "1px dashed #b8b8b8",
+                    background: "#ececec",
+                    fontSize: 12,
+                    color: "#555",
+                  }}
+                >
+                  No media attached to this question.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    width: "min(820px, 100%)",
+                    display: "grid",
+                    gridTemplateColumns:
+                      mediaItems.length >= 2 ? "1fr 1fr" : "1fr",
+                    gap: 18,
+                    marginBottom: 16,
+                    alignItems: "start",
+                  }}
+                >
+                  {mediaItems.map((m) => (
+                    <div key={m.id}>
+                      <div
+                        style={{
+                          background: "#000",
+                          display: "inline-block",
+                          maxWidth: "100%",
+                          boxShadow: "0 0 0 1px rgba(0,0,0,0.45)",
+                        }}
+                      >
+                        {m.kind === "image" ? (
+                          <img
+                            src={m.url}
+                            alt={m.caption || "Question media"}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              maxHeight: 350,
+                              objectFit: "contain",
+                              background: "#000",
+                            }}
+                          />
+                        ) : (
+                          <video
+                            src={m.url}
+                            controls
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              maxHeight: 350,
+                              background: "#000",
+                            }}
+                          />
+                        )}
+                      </div>
 
-        {m.caption ? (
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.75 }}>
-            {m.caption}
-          </div>
-        ) : null}
-      </div>
-    ))}
-  </div>
-)}
+                      {m.caption ? (
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontSize: 12,
+                            color: "#474747",
+                            lineHeight: 1.35,
+                          }}
+                        >
+                          {m.caption}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isFinalized ? (
+                <div
+                  style={{
+                    width: "min(820px, 100%)",
+                    marginBottom: 12,
+                    padding: 10,
+                    border: "1px solid #b91c1c",
+                    background: "#fee2e2",
+                    color: "#7f1d1d",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  TEST FINALISED: You can no longer edit. Your last saved work
+                  was submitted.
+                </div>
+              ) : null}
 
-              <label
-                style={{
-                  display: "block",
-                  marginTop: 16,
-                  fontWeight: 800,
-                }}
-              >
-                Your answer
-              </label>
-
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                rows={10}
+              <div
                 style={{
                   width: "100%",
-                  marginTop: 8,
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid #ccc",
-                  fontFamily: "inherit",
+                  maxWidth: 1020,
+                  background: "#efefef",
+                  border: "1px solid #d4d4d4",
+                  position: "relative",
                 }}
-                placeholder="Type your answer here..."
-              />
-
-              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                <button
-                  onClick={saveDraft}
-                  disabled={isSubmitted}
+              >
+                <div
                   style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    cursor: isSubmitted ? "not-allowed" : "pointer",
-                    opacity: isSubmitted ? 0.5 : 1,
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    display: "grid",
+                    gap: 6,
                   }}
                 >
-                  Save Draft
-                </button>
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      background: "#dddddd",
+                      border: "1px solid #e7e7e7",
+                      color: "#fff",
+                      fontSize: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      userSelect: "none",
+                    }}
+                  >
+                    +
+                  </div>
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      background: "#dddddd",
+                      border: "1px solid #e7e7e7",
+                      color: "#fff",
+                      fontSize: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      userSelect: "none",
+                      lineHeight: 1,
+                    }}
+                  >
+                    −
+                  </div>
+                </div>
 
-                
-                <button
-                  onClick={submitFinal}
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  disabled={isSubmitted || isFinalized}
+                  rows={12}
                   style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    cursor: "pointer",
+                    width: "100%",
+                    minHeight: 96,
+                    resize: "vertical",
+                    border: "none",
+                    outline: "none",
+                    background: "#efefef",
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 17,
+                    lineHeight: 1.45,
+                    color: "#222",
+                    padding: "12px 42px 12px 14px",
+                    boxSizing: "border-box",
+                  }}
+                  placeholder="Type your answer here..."
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 4,
+                  marginTop: 6,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    background: "#7c7c7c",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 20,
+                    border: "1px solid #989898",
+                    userSelect: "none",
                   }}
                 >
-                  Submit Final
-                </button>
-
-                <div style={{ marginLeft: "auto", opacity: 0.8 }}>
-                  Status:{" "}
-                  <b>{answerRow?.status ? answerRow.status : "not_started"}</b>
+                  ⤢
+                </div>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    background: "#7c7c7c",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 22,
+                    border: "1px solid #989898",
+                    userSelect: "none",
+                  }}
+                >
+                  ↺
+                </div>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    background: "#7c7c7c",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 22,
+                    border: "1px solid #989898",
+                    userSelect: "none",
+                  }}
+                >
+                  ↻
                 </div>
               </div>
 
               {statusText ? (
-                <p style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                <div
+                  style={{
+                    marginBottom: 12,
+                    fontSize: 12,
+                    color: "#333",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
                   {statusText}
-                </p>
+                </div>
               ) : null}
 
-              {/* ===== ANCHOR: question-page-bottom-nav ===== */}
-<div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 10,
-    marginTop: 16,
-    paddingTop: 12,
-    borderTop: "1px solid #eee",
-  }}
->
-  <button
-    onClick={() => prevNum && router.push(`/q/${prevNum}`)}
-    disabled={!prevNum}
-    style={{
-      padding: "10px 12px",
-      borderRadius: 10,
-      border: "1px solid #333",
-      cursor: prevNum ? "pointer" : "not-allowed",
-      opacity: prevNum ? 1 : 0.5,
-    }}
-  >
-    Previous
-  </button>
+              <div
+                style={{
+                  position: "sticky",
+                  bottom: 0,
+                  background: "#d9d9d9",
+                  paddingTop: 4,
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "112px 1fr 202px",
+                    alignItems: "end",
+                    gap: 0,
+                    minHeight: 40,
+                  }}
+                >
+                  <button
+                    onClick={() => prevNum && router.push(`/q/${prevNum}`)}
+                    disabled={!prevNum}
+                    style={{
+                      height: 30,
+                      border: "1px solid #8ab63f",
+                      background: prevNum ? "#7fb43d" : "#a7bf82",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 400,
+                      cursor: prevNum ? "pointer" : "not-allowed",
+                      opacity: prevNum ? 1 : 0.78,
+                      justifySelf: "start",
+                      width: 105,
+                    }}
+                  >
+                    ◀ Previous
+                  </button>
 
-  <div style={{ display: "flex", gap: 10 }}>
-    <button
-      onClick={saveAndNext}
-      disabled={!nextNum || isSubmitted}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 10,
-        border: "1px solid #333",
-        cursor: !nextNum || isSubmitted ? "not-allowed" : "pointer",
-        opacity: !nextNum || isSubmitted ? 0.5 : 1,
-      }}
-    >
-      Save &amp; Next
-    </button>
+                  <div
+                    style={{
+                      textAlign: "center",
+                      fontSize: 12,
+                      color: "#666",
+                      paddingBottom: 6,
+                    }}
+                  >
+                    Status:{" "}
+                    <b>
+                      {answerRow?.status ? answerRow.status : "not_started"}
+                    </b>
+                    {email ? (
+                      <span style={{ marginLeft: 10 }}>{email}</span>
+                    ) : null}
+                  </div>
 
-    <button
-      onClick={() => router.push("/questions")}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 10,
-        border: "1px solid #333",
-        cursor: "pointer",
-      }}
-    >
-      Finish
-    </button>
-  </div>
-</div>
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      {/* ===== ANCHOR: question-page-right-guidance ===== */}
-      <aside
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 12,
-          padding: 12,
-          position: "sticky",
-          top: 16,
-        }}
-      >
-        <div style={{ fontWeight: 900, marginBottom: 10 }}>Guidance</div>
-
-        <div
-          style={{ display: "flex", gap: 10, fontSize: 13, marginBottom: 12 }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                display: "inline-block",
-                borderRadius: 3,
-                background: "#2f7d32",
-              }}
-            />
-            Attempted
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                display: "inline-block",
-                borderRadius: 3,
-                background: "#999",
-              }}
-            />
-            Not Attempted
-          </div>
+                  <button
+                    onClick={saveAndNext}
+                    disabled={!nextNum || isSubmitted || isFinalized}
+                    style={{
+                      height: 30,
+                      border: "1px solid #8ab63f",
+                      background:
+                        !nextNum || isSubmitted ? "#a7bf82" : "#7fb43d",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 400,
+                      cursor:
+                        !nextNum || isSubmitted ? "not-allowed" : "pointer",
+                      width: 198,
+                      justifySelf: "end",
+                    }}
+                  >
+                    Save &amp; Next
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-          Questions
-        </div>
-
-        <div
+        {/* ===== ANCHOR: question-page-right-guidance ===== */}
+        <aside
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
-            gap: 8,
+            minHeight: "calc(100vh - 28px)",
+            background: "#1f1f1f",
+            color: "#fff",
+            padding: "8px 8px 12px",
+            boxSizing: "border-box",
           }}
         >
-          {(allQuestionNumbers.length ? allQuestionNumbers : [questionNumber]).map(
-            (n) => {
-              const isCurrent = n === questionNumber;
+          <div
+            style={{
+              display: "inline-block",
+              background: "#343434",
+              border: "1px solid #3e3e3e",
+              padding: "6px 11px",
+              fontSize: 13,
+              marginBottom: 12,
+            }}
+          >
+            Guidance
+          </div>
 
-// If we know the question id, use real status; otherwise fall back.
-const qidForN = questionsIdByNumber[n]; // we’ll add this next line in Step 21E
-const st =
-  qidForN && statusByQuestionId[qidForN] ? statusByQuestionId[qidForN] : "not_started";
+          <div
+            style={{
+              borderTop: "1px solid #454545",
+              paddingTop: 10,
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 15,
+                marginBottom: 8,
+              }}
+            >
+              Questions
+            </div>
 
-const attempted = st === "draft" || st === "submitted";
+            <div style={{ marginBottom: 10, fontSize: 14 }}>Section A</div>
 
-              return (
-                <button
-                  key={n}
-                  onClick={() => router.push(`/q/${n}`)}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 28px)",
+                gap: 4,
+                marginBottom: 12,
+              }}
+            >
+              {(allQuestionNumbers.length
+                ? allQuestionNumbers
+                : [questionNumber]
+              ).map((n) => {
+                const isCurrent = n === questionNumber;
+                const st = getTileState(n);
+
+                const isSubmittedTile = st === "submitted";
+                const isCurrentTile = isCurrent;
+
+                let tileBg = "#6a6a6a";
+                if (isSubmittedTile) tileBg = "#79bb3b";
+                if (isCurrentTile) tileBg = "#35c0cd";
+
+                return (
+                  <button
+                    key={n}
+                    onClick={() => router.push(`/q/${n}`)}
+                    style={{
+                      position: "relative",
+                      width: 28,
+                      height: 28,
+                      border: isCurrent
+                        ? "2px solid #fff"
+                        : "1px solid #4a4a4a",
+                      background: tileBg,
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 400,
+                      cursor: "pointer",
+                      padding: 0,
+                      overflow: "hidden",
+                    }}
+                    title={isCurrent ? "Current question" : `Go to Q${n}`}
+                  >
+                    {st === "draft" && !isCurrentTile ? (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          right: 0,
+                          width: 0,
+                          height: 0,
+                          borderTop: "11px solid #cf2d2d",
+                          borderLeft: "11px solid transparent",
+                        }}
+                      />
+                    ) : null}
+                    <span style={{ position: "relative", zIndex: 1 }}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 200,
+              fontSize: 12,
+              lineHeight: 1.75,
+              color: "#ececec",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  display: "inline-block",
+                  background: "#35c0cd",
+                }}
+              />
+              Current question
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  display: "inline-block",
+                  background: "#79bb3b",
+                }}
+              />
+              Submitted
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  display: "inline-block",
+                  background: "#6a6a6a",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+              >
+                <span
                   style={{
-                    padding: "8px 0",
-                    borderRadius: 10,
-                    border: isCurrent ? "2px solid #000" : "1px solid #bbb",
-                    cursor: "pointer",
-                    background: attempted ? "#2f7d32" : "#999",
-                    color: "#fff",
-                    fontWeight: 900,
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    width: 0,
+                    height: 0,
+                    borderTop: "8px solid #cf2d2d",
+                    borderLeft: "8px solid transparent",
                   }}
-                  title={isCurrent ? "Current question" : `Go to Q${n}`}
-                >
-                  {n}
-                </button>
-              );
-            },
-          )}
-        </div>
+                />
+              </span>
+              Draft / Not submitted
+            </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          <button
-            onClick={() => saveDraft()}
-            disabled={isSubmitted}
-            style={{
-              flex: 1,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #333",
-              cursor: isSubmitted ? "not-allowed" : "pointer",
-              opacity: isSubmitted ? 0.5 : 1,
-            }}
-          >
-            Save
-          </button>
+            <div style={{ marginTop: 18, color: "#b9f06a" }}>
+              Saving online &amp; offline
+            </div>
+          </div>
 
-          <button
-            onClick={() => router.push("/questions")}
-            style={{
-              flex: 1,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #333",
-              cursor: "pointer",
-            }}
-          >
-            Finish
-          </button>
-        </div>
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={() => saveDraft()}
+              disabled={isSubmitted || isFinalized}
+              style={{
+                width: "100%",
+                height: 34,
+                border: "1px solid #5f5f5f",
+                background: isSubmitted ? "#666" : "#6f6f6f",
+                color: "#fff",
+                fontSize: 15,
+                cursor: isSubmitted || isFinalized ? "not-allowed" : "pointer",
+                marginBottom: 9,
+              }}
+            >
+              Save
+            </button>
 
-        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
-          Text size + “Text BG” controls will be added after MVP.
-        </div>
-      </aside>
-    </div>
-  </main>
-);
+            <button
+              onClick={finishWithConfirmation}
+              style={{
+                width: "100%",
+                height: 42,
+                border: "1px solid #111",
+                background: "#000",
+                color: "#fff",
+                fontSize: 18,
+                cursor: "pointer",
+                fontWeight: 400,
+              }}
+            >
+              Finish
+            </button>
+          </div>
+        </aside>
+      </div>
+    </main>
+  );
 }

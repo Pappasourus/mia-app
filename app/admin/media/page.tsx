@@ -79,23 +79,20 @@ export default function AdminMediaPage() {
 
       setEmail(session.user.email ?? "");
 
-      // admin check
-      const { data: prof, error: profErr } = await sb
-        .from("profiles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .single();
+      // admin check via allowlist table (RPC)
+      const { data: isAdmin, error: adminErr } = await sb.rpc(
+        "is_current_user_admin",
+      );
 
-      if (profErr) {
-        setStatus(`Could not load profile: ${profErr.message}`);
+      if (adminErr) {
+        setStatus(`Admin check failed: ${adminErr.message}`);
         setLoading(false);
         return;
       }
 
-      const admin = String((prof as any)?.role) === "admin";
-      setIsAdmin(admin);
+      setIsAdmin(Boolean(isAdmin));
 
-      if (!admin) {
+      if (!isAdmin) {
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
@@ -217,7 +214,10 @@ export default function AdminMediaPage() {
     setStatus("Deleting...");
 
     // delete DB row first
-    const { error: delErr } = await sb.from("question_media").delete().eq("id", m.id);
+    const { error: delErr } = await sb
+      .from("question_media")
+      .delete()
+      .eq("id", m.id);
     if (delErr) {
       setStatus(`❌ Could not delete row: ${delErr.message}`);
       return;
@@ -242,7 +242,17 @@ export default function AdminMediaPage() {
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 1100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <div className="flex justify-end mb-3">
+        <Link
+          href="/"
+          className="text-xs rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900"
+        >
+          Home
+        </Link>
+      </div>
+      <div
+        style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+      >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 900 }}>Admin: Media</h1>
           <div style={{ marginTop: 6, opacity: 0.75, fontSize: 14 }}>
@@ -254,16 +264,16 @@ export default function AdminMediaPage() {
           <Link href="/admin/questions" style={{ textDecoration: "none" }}>
             Admin: Questions
           </Link>
-          <Link href="/questions" style={{ textDecoration: "none" }}>
-            Student view
-          </Link>
+          
         </div>
       </div>
 
       {loading ? (
         <p style={{ marginTop: 18 }}>Loading…</p>
       ) : !isAdmin ? (
-        <p style={{ marginTop: 18, color: "crimson" }}>{status || "Admin only."}</p>
+        <p style={{ marginTop: 18, color: "crimson" }}>
+          {status || "Admin only."}
+        </p>
       ) : (
         <>
           {/* ===== ANCHOR: admin-media-form ===== */}
@@ -279,12 +289,22 @@ export default function AdminMediaPage() {
               Upload and attach media
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "160px 1fr",
+                gap: 10,
+              }}
+            >
               <label style={{ fontWeight: 700 }}>Question</label>
               <select
                 value={selectedQid}
                 onChange={(e) => setSelectedQid(e.target.value)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
               >
                 {questions.map((q) => (
                   <option key={q.id} value={q.id}>
@@ -297,7 +317,11 @@ export default function AdminMediaPage() {
               <select
                 value={kind}
                 onChange={(e) => setKind(e.target.value as any)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
               >
                 <option value="image">image</option>
                 <option value="video">video</option>
@@ -314,7 +338,11 @@ export default function AdminMediaPage() {
               <input
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                }}
                 placeholder="e.g. Diagram for part (a)"
               />
 
@@ -323,7 +351,12 @@ export default function AdminMediaPage() {
                 type="number"
                 value={sortOrder}
                 onChange={(e) => setSortOrder(Number(e.target.value))}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc", maxWidth: 220 }}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ccc",
+                  maxWidth: 220,
+                }}
               />
             </div>
 
@@ -341,7 +374,9 @@ export default function AdminMediaPage() {
               </button>
 
               {status ? (
-                <div style={{ marginLeft: "auto", opacity: 0.85 }}>{status}</div>
+                <div style={{ marginLeft: "auto", opacity: 0.85 }}>
+                  {status}
+                </div>
               ) : null}
             </div>
           </div>
@@ -376,13 +411,21 @@ export default function AdminMediaPage() {
                           <img
                             src={url}
                             alt={m.caption || "media"}
-                            style={{ width: "100%", borderRadius: 10, display: "block" }}
+                            style={{
+                              width: "100%",
+                              borderRadius: 10,
+                              display: "block",
+                            }}
                           />
                         ) : (
                           <video
                             src={url}
                             controls
-                            style={{ width: "100%", borderRadius: 10, display: "block" }}
+                            style={{
+                              width: "100%",
+                              borderRadius: 10,
+                              display: "block",
+                            }}
                           />
                         )}
                       </div>
@@ -391,10 +434,14 @@ export default function AdminMediaPage() {
                         <div style={{ fontWeight: 900 }}>
                           {m.kind} (order {m.sort_order})
                         </div>
-                        <div style={{ marginTop: 6, opacity: 0.75, fontSize: 13 }}>
+                        <div
+                          style={{ marginTop: 6, opacity: 0.75, fontSize: 13 }}
+                        >
                           {m.caption || "(no caption)"}
                         </div>
-                        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>
+                        <div
+                          style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
+                        >
                           Path: <code>{m.path}</code>
                         </div>
                       </div>
