@@ -91,10 +91,11 @@ export default function AdminHomePage() {
     setFinalizeMsg("✅ Test finalized.");
     setIsFinalized(true);
   }
-    const items = [
+      const items = [
     { href: "/admin/questions", label: "Question Builder" },
     { href: "/admin/media", label: "Media" },
     { href: "/admin/tests", label: "Test Builder" },
+    { href: "/admin/answers", label: "Answers" },
     { href: "/admin/students", label: "Students" },
     ...(canManageAdmins
       ? [{ href: "/admin/admins", label: "Admins" }]
