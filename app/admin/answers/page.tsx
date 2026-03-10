@@ -146,12 +146,16 @@ export default function AdminAnswersPage() {
       const defaultId = testId || tRows[0]?.id || "";
       setSelectedTestId(defaultId);
 
-      // Load students
+      // Load students (only invited ones)
       const { data: stuData, error: stuErr } = await sb
         .from("profiles")
-        .select("user_id, email, role")
-        // ===== ANCHOR: admin-answers-include-admins-in-picker =====
-        .in("role", ["student", "admin"])
+        .select("user_id, email")
+        .in(
+          "email",
+          (await sb.from("invited_students").select("email")).data?.map(
+            (r: any) => r.email,
+          ) ?? [],
+        )
         .order("email", { ascending: true });
 
       if (stuErr) {
@@ -471,20 +475,20 @@ export default function AdminAnswersPage() {
     let currentSection: string | null = null;
 
     for (const q of orderedQuestions) {
-              const sec = String((q as any).section ?? "A");
+      const sec = String((q as any).section ?? "A");
 
-        if (sec !== currentSection) {
-          currentSection = sec;
+      if (sec !== currentSection) {
+        currentSection = sec;
 
-          if (y > pageH - margin - 60) {
-            doc.addPage();
-            y = margin;
-          }
-
-          doc.setFontSize(14);
-          doc.text(`Section ${sec}`, margin, y);
-          y += 18;
+        if (y > pageH - margin - 60) {
+          doc.addPage();
+          y = margin;
         }
+
+        doc.setFontSize(14);
+        doc.text(`Section ${sec}`, margin, y);
+        y += 18;
+      }
       const a = answerByQid.get(q.id);
       const st = a?.status ?? "not_started";
       const answerText =
