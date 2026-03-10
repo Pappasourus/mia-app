@@ -65,6 +65,14 @@ export default function QuestionPage() {
   const router = useRouter();
   const params = useParams<{ questionNumber: string }>();
   const questionNumber = Number(params.questionNumber || 0);
+  useEffect(() => {
+    if (questionNumber > 0) {
+      window.localStorage.setItem(
+        "mia_last_question_number",
+        String(questionNumber),
+      );
+    }
+  }, [questionNumber]);
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -188,6 +196,12 @@ export default function QuestionPage() {
 
       const testId = String((settings0 as any)?.current_test_id ?? "");
       setCurrentTestId(testId);
+
+      if (!testId) {
+        setErrorMsg("No active test is available.");
+        setLoading(false);
+        return;
+      }
 
       // Load + poll finalized status (locks students if admin finalizes mid-test)
       async function fetchFinalized() {
@@ -566,7 +580,9 @@ export default function QuestionPage() {
   }
 
   // ===== ANCHOR: question-page-submit-final =====
-  async function submitFinal(opts?: { goHomeAfter?: boolean }): Promise<boolean> {
+  async function submitFinal(opts?: {
+    goHomeAfter?: boolean;
+  }): Promise<boolean> {
     if (!supabase) return false;
     if (!question) return false;
     if (!userId) return false;
@@ -888,7 +904,7 @@ export default function QuestionPage() {
                   {questionNumber}
                 </div>
 
-                                <div
+                <div
                   style={{
                     fontSize: 19,
                     lineHeight: 1.3,
@@ -1300,7 +1316,7 @@ export default function QuestionPage() {
 
                   <button
                     onClick={async () => {
-                      const ok = await saveDraft();
+                      const ok = await submitFinal();
                       if (!ok) return;
                       if (nextNum) router.push(`/q/${nextNum}`);
                     }}
