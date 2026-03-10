@@ -292,7 +292,7 @@ export default function AdminAnswersPage() {
       const lineGap = 12;
       // Load all sub-questions for the current test’s questions (once per export)
       const qids = questions.map((q) => q.id);
-      const { data: partsRows } = await supabase
+      const { data: partsRows } = await sb!
         .from("question_parts")
         .select("question_id, part_label, marks, sort_order")
         .in("question_id", qids);
@@ -442,7 +442,7 @@ export default function AdminAnswersPage() {
     const lineGap = 12;
     // Load all sub-questions for the current test’s questions (once per export)
     const qids = questions.map((q) => q.id);
-    const { data: partsRows } = await supabase
+    const { data: partsRows } = await sb!
       .from("question_parts")
       .select("question_id, part_label, marks, sort_order")
       .in("question_id", qids);
