@@ -94,7 +94,13 @@ export default function LoginPage() {
     }
 
     setStatus(`✅ Signed in! Redirecting to ${next}...`);
-    router.push(next);
+    const lastQ = window.localStorage.getItem("mia_last_question_number");
+
+if (lastQ) {
+  router.push(`/q/${lastQ}`);
+} else {
+  router.push(next || "/");
+}
     router.refresh();
   }
 
