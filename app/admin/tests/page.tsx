@@ -19,6 +19,7 @@ export default function AdminTestsPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [tests, setTests] = useState<TestRow[]>([]);
   const [currentTestId, setCurrentTestId] = useState<string>("");
@@ -84,12 +85,25 @@ export default function AdminTestsPage() {
       const emailLower = (session.user.email ?? "").toLowerCase().trim();
       setAdminEmail(emailLower);
 
-      if (emailLower !== "riegardts@gmail.com") {
+      const { data: adminOk, error: adminErr } = await sb.rpc(
+        "is_current_user_admin",
+      );
+
+      if (adminErr) {
+        setIsAdmin(false);
+        setStatus(`Admin check failed: ${adminErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!adminOk) {
+        setIsAdmin(false);
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
       }
 
+      setIsAdmin(true);
       await loadAll();
       setLoading(false);
     })();
@@ -215,8 +229,9 @@ export default function AdminTestsPage() {
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 900 }}>
-  Admin: Tests <span style={{ fontSize: 12, opacity: 0.6 }}>(preview)</span>
-</h1>
+            Admin: Tests{" "}
+            <span style={{ fontSize: 12, opacity: 0.6 }}>(preview)</span>
+          </h1>
           <div style={{ marginTop: 6, opacity: 0.75, fontSize: 14 }}>
             Logged in as: <b>{adminEmail || "…"}</b>
           </div>
@@ -234,7 +249,7 @@ export default function AdminTestsPage() {
 
       {loading ? (
         <p style={{ marginTop: 18 }}>Loading…</p>
-      ) : adminEmail !== "riegardts@gmail.com" ? (
+      ) : !isAdmin ? (
         <p style={{ marginTop: 18, color: "crimson" }}>
           {status || "Admin only."}
         </p>

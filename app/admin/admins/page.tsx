@@ -84,6 +84,12 @@ export default function AdminAdminsPage() {
         return;
       }
 
+      if (emailLower !== "riegardts@gmail.com") {
+        setStatus("Not authorized: only the owner can manage admins.");
+        setLoading(false);
+        return;
+      }
+
       await loadAdmins();
       setLoading(false);
     })();

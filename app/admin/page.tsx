@@ -11,6 +11,8 @@ export default function AdminHomePage() {
   const [status, setStatus] = useState("Checking admin access…");
   const [isFinalized, setIsFinalized] = useState<boolean | null>(null);
   const [finalizeMsg, setFinalizeMsg] = useState<string>("");
+  const [currentTestName, setCurrentTestName] = useState<string>("");
+  const [canManageAdmins, setCanManageAdmins] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -26,6 +28,7 @@ export default function AdminHomePage() {
         router.replace("/login?next=/admin");
         return;
       }
+            setCanManageAdmins((user.email ?? "").toLowerCase() === "riegardts@gmail.com");
 
       // Admin check via allowlist table (RPC)
       const { data: isAdmin, error: adminErr } = await supabase.rpc(
@@ -53,14 +56,16 @@ export default function AdminHomePage() {
       const testId = String((settings as any)?.current_test_id ?? "");
 
       if (!testId) {
+        setCurrentTestName("");
         setIsFinalized(false);
       } else {
         const { data: t } = await supabase
           .from("tests")
-          .select("is_finalized")
+          .select("name, is_finalized")
           .eq("id", testId)
           .maybeSingle();
 
+        setCurrentTestName(String((t as any)?.name ?? ""));
         setIsFinalized(Boolean((t as any)?.is_finalized));
       }
     }
@@ -86,13 +91,14 @@ export default function AdminHomePage() {
     setFinalizeMsg("✅ Test finalized.");
     setIsFinalized(true);
   }
-  const items = [
+    const items = [
     { href: "/admin/questions", label: "Question Builder" },
     { href: "/admin/media", label: "Media" },
-    { href: "/admin/answers", label: "Answers" },
-    { href: "/admin/students", label: "Students (Invites)" },
-    { href: "/admin/tests", label: "Tests (Builder)" },
-    { href: "/admin/admins", label: "Admins (Allowlist)" },
+    { href: "/admin/tests", label: "Test Builder" },
+    { href: "/admin/students", label: "Students" },
+    ...(canManageAdmins
+      ? [{ href: "/admin/admins", label: "Admins" }]
+      : []),
   ];
 
   return (
@@ -112,7 +118,11 @@ export default function AdminHomePage() {
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold">
-              Test status:{" "}
+              Test status{" "}
+              {currentTestName ? (
+                <span className="text-slate-400">({currentTestName})</span>
+              ) : null}
+              :{" "}
               {isFinalized === null ? (
                 <span className="text-slate-400">loading…</span>
               ) : isFinalized ? (
@@ -143,7 +153,7 @@ export default function AdminHomePage() {
               href={it.href}
               className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 hover:bg-slate-900"
             >
-              {it.label} <span className="text-slate-500">({it.href})</span>
+              {it.label}
             </a>
           ))}
         </div>

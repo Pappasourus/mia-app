@@ -18,6 +18,7 @@ export default function AdminStudentsPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [newEmail, setNewEmail] = useState("");
@@ -68,12 +69,25 @@ export default function AdminStudentsPage() {
       const emailLower = (session.user.email ?? "").toLowerCase().trim();
       setAdminEmail(emailLower);
 
-      // TEMP: admin allowlist
-      if (emailLower !== "riegardts@gmail.com") {
+      const { data: adminOk, error: adminErr } = await sb.rpc(
+        "is_current_user_admin",
+      );
+
+      if (adminErr) {
+        setIsAdmin(false);
+        setStatus(`Admin check failed: ${adminErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!adminOk) {
+        setIsAdmin(false);
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
       }
+
+      setIsAdmin(true);
 
       await loadInvites();
       setLoading(false);
@@ -255,7 +269,7 @@ export default function AdminStudentsPage() {
 
       {loading ? (
         <p style={{ marginTop: 18 }}>Loading…</p>
-      ) : adminEmail !== "riegardts@gmail.com" ? (
+      ) : !isAdmin ? (
         <p style={{ marginTop: 18, color: "crimson" }}>
           {status || "Admin only."}
         </p>

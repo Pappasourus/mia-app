@@ -11,6 +11,16 @@ type QuestionRow = {
   title: string;
   prompt: string;
   marks: number;
+  section?: "A" | "B" | "C" | null;
+};
+
+type PartRow = {
+  id: string;
+  question_id: string;
+  part_label: string; // a, b, c...
+  prompt: string;
+  marks: number;
+  sort_order: number;
 };
 
 type AnswerRow = {
@@ -31,6 +41,26 @@ type MediaItem = {
   sort_order: number;
 };
 
+function parsePartAnswers(s: string): Record<string, string> {
+  try {
+    const obj = JSON.parse(s || "{}");
+    if (obj && typeof obj === "object") return obj as any;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function allPartsAnswered(answerText: string, partLabels: string[]): boolean {
+  if (!partLabels.length) return false;
+  const obj = parsePartAnswers(answerText);
+  return partLabels.every((lab) => (obj[lab] ?? "").trim().length > 0);
+}
+
+function serializePartAnswers(obj: Record<string, string>) {
+  return JSON.stringify(obj ?? {});
+}
+
 export default function QuestionPage() {
   const router = useRouter();
   const params = useParams<{ questionNumber: string }>();
@@ -44,27 +74,45 @@ export default function QuestionPage() {
   const [candidateId, setCandidateId] = useState<string>("");
   // ===== ANCHOR: question-page-userid-state =====
   const [userId, setUserId] = useState<string>("");
+
   const [question, setQuestion] = useState<QuestionRow | null>(null);
+  const [parts, setParts] = useState<PartRow[]>([]);
+
   // ===== ANCHOR: question-page-all-question-numbers-state =====
   const [allQuestionNumbers, setAllQuestionNumbers] = useState<number[]>([]);
   // ===== ANCHOR: question-page-questionsIdByNumber-state =====
   const [questionsIdByNumber, setQuestionsIdByNumber] = useState<
     Record<number, string>
   >({});
+
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
+
   // ===== ANCHOR: question-page-media-state =====
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+
   // ===== ANCHOR: question-page-status-map-state =====
   const [statusByQuestionId, setStatusByQuestionId] = useState<
     Record<string, "not_started" | "draft" | "submitted">
   >({});
 
+  const [partLabelsByQuestionId, setPartLabelsByQuestionId] = useState<
+    Record<string, string[]>
+  >({});
+
+  // NEW: answer text per question (for tile logic)
+  const [answerTextByQuestionId, setAnswerTextByQuestionId] = useState<
+    Record<string, string>
+  >({});
+
   const [draft, setDraft] = useState("");
+  const [partAnswers, setPartAnswers] = useState<Record<string, string>>({});
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
+  const [currentTestId, setCurrentTestId] = useState<string>("");
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
+  const [lastSavedDraft, setLastSavedDraft] = useState<string>("");
   const isAutoSavingRef = useRef(false);
 
   const isSubmitted = useMemo(
@@ -124,6 +172,23 @@ export default function QuestionPage() {
       setEmail(session.user.email ?? "");
       // ===== ANCHOR: question-page-store-userid =====
       setUserId(session.user.id);
+
+      // Load current test id (used to isolate answers per test)
+      const { data: settings0, error: settings0Err } = await sb
+        .from("app_settings")
+        .select("current_test_id")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (settings0Err) {
+        setErrorMsg(`Could not load app settings: ${settings0Err.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const testId = String((settings0 as any)?.current_test_id ?? "");
+      setCurrentTestId(testId);
+
       // Load + poll finalized status (locks students if admin finalizes mid-test)
       async function fetchFinalized() {
         // Find current test
@@ -174,17 +239,36 @@ export default function QuestionPage() {
       // ===== ANCHOR: question-page-load-all-statuses =====
       const { data: allAns, error: allAnsErr } = await sb
         .from("answers")
-        .select("question_id, status")
-        .eq("student_user_id", session.user.id);
+        .select("question_id, status, draft_text, submitted_text")
+        .eq("student_user_id", session.user.id)
+        .eq("test_id", testId);
 
       if (!allAnsErr) {
-        const map: Record<string, "not_started" | "draft" | "submitted"> = {};
+        const statusMap: Record<string, "not_started" | "draft" | "submitted"> =
+          {};
+        const textMap: Record<string, string> = {};
+
         for (const r of allAns ?? []) {
           const qid = String((r as any).question_id ?? "");
           const st = (r as any).status as any;
-          if (qid) map[qid] = st;
+
+          if (qid) {
+            statusMap[qid] = st;
+
+            const txt =
+              st === "submitted"
+                ? String((r as any).submitted_text ?? "")
+                : String((r as any).draft_text ?? "");
+            textMap[qid] = txt;
+          }
         }
-        setStatusByQuestionId(map);
+
+        setStatusByQuestionId(statusMap);
+        setAnswerTextByQuestionId(textMap);
+      } else {
+        // keep empty maps if error
+        setStatusByQuestionId({});
+        setAnswerTextByQuestionId({});
       }
 
       // 2) Load current test mapping (sort_order -> question_id), then load this question
@@ -228,6 +312,44 @@ export default function QuestionPage() {
           }
           setQuestionsIdByNumber(map);
 
+          // Load sub-question labels for ALL questions in this test (for tile logic)
+          const allQids = Object.values(map).filter(Boolean);
+
+          if (allQids.length > 0) {
+            const { data: partsAll, error: partsAllErr } = await sb
+              .from("question_parts")
+              .select("question_id, part_label, sort_order")
+              .in("question_id", allQids);
+
+            if (!partsAllErr) {
+              const byQid: Record<string, { label: string; sort: number }[]> =
+                {};
+
+              for (const p of partsAll ?? []) {
+                const qid = String((p as any).question_id ?? "");
+                const label = String((p as any).part_label ?? "").trim();
+                const sort = Number((p as any).sort_order ?? 0);
+
+                if (!qid || !label) continue;
+                if (!byQid[qid]) byQid[qid] = [];
+                byQid[qid].push({ label, sort });
+              }
+
+              const labelsOnly: Record<string, string[]> = {};
+              for (const qid of Object.keys(byQid)) {
+                labelsOnly[qid] = byQid[qid]
+                  .sort((a, b) => a.sort - b.sort)
+                  .map((x) => x.label);
+              }
+
+              setPartLabelsByQuestionId(labelsOnly);
+            } else {
+              setPartLabelsByQuestionId({});
+            }
+          } else {
+            setPartLabelsByQuestionId({});
+          }
+
           qidForThisPage = map[questionNumber] ?? "";
         }
       }
@@ -266,7 +388,7 @@ export default function QuestionPage() {
       // Load the question by ID (works for both modes)
       const { data: qData, error: qErr } = await sb
         .from("questions")
-        .select("id, question_number, title, prompt, marks")
+        .select("id, question_number, title, prompt, marks, section")
         .eq("id", qidForThisPage)
         .single();
 
@@ -277,6 +399,19 @@ export default function QuestionPage() {
       }
 
       const q = qData as QuestionRow;
+
+      // Load sub-questions (a/b/c…) if any
+      const { data: partsData, error: pErr2 } = await sb
+        .from("question_parts")
+        .select("id, question_id, part_label, prompt, marks, sort_order")
+        .eq("question_id", q.id)
+        .order("sort_order", { ascending: true });
+
+      if (!pErr2) {
+        setParts((partsData ?? []) as any);
+      } else {
+        setParts([]);
+      }
 
       // ===== ANCHOR: question-page-load-media =====
       const { data: mData, error: mErr } = await sb
@@ -310,8 +445,8 @@ export default function QuestionPage() {
         .select(
           "id, question_id, student_user_id, status, draft_text, submitted_text",
         )
+        .eq("test_id", testId)
         .eq("question_id", q.id)
-        // ===== ANCHOR: question-page-filter-answer-by-user =====
         .eq("student_user_id", session.user.id)
         .maybeSingle();
 
@@ -333,7 +468,9 @@ export default function QuestionPage() {
           : ((aData as any)?.draft_text ?? "");
 
       setDraft(startingDraft);
+      setPartAnswers(parsePartAnswers(startingDraft));
       lastSavedDraftRef.current = startingDraft;
+      setLastSavedDraft(startingDraft);
       setLoading(false);
     })();
 
@@ -370,7 +507,13 @@ export default function QuestionPage() {
     }
 
     // ===== ANCHOR: question-page-save-draft-payload-with-user =====
+    if (!currentTestId) {
+      if (!opts?.silent) setStatusText("Still loading test info. Try again.");
+      return false;
+    }
+
     const payload = {
+      test_id: currentTestId,
       question_id: question.id,
       student_user_id: userId,
       status: "draft",
@@ -380,7 +523,7 @@ export default function QuestionPage() {
 
     const { data, error } = await supabase
       .from("answers")
-      .upsert(payload, { onConflict: "question_id,student_user_id" })
+      .upsert(payload, { onConflict: "test_id,question_id,student_user_id" })
       .select(
         "id, question_id, student_user_id, status, draft_text, submitted_text",
       )
@@ -395,10 +538,17 @@ export default function QuestionPage() {
 
     setAnswerRow(data as any);
     lastSavedDraftRef.current = textToSave;
+    setLastSavedDraft(textToSave);
 
     setStatusByQuestionId((prev) => ({
       ...prev,
       [question.id]: textToSave.trim() ? "draft" : "not_started",
+    }));
+
+    // keep the map used for tile completeness checks in sync for the current question
+    setAnswerTextByQuestionId((prev) => ({
+      ...prev,
+      [question.id]: textToSave,
     }));
 
     if (!opts?.silent) {
@@ -416,14 +566,18 @@ export default function QuestionPage() {
   }
 
   // ===== ANCHOR: question-page-submit-final =====
-  async function submitFinal(opts?: {
-    goHomeAfter?: boolean;
-  }): Promise<boolean> {
+  async function submitFinal(opts?: { goHomeAfter?: boolean }): Promise<boolean> {
     if (!supabase) return false;
     if (!question) return false;
     if (!userId) return false;
 
+    if (!currentTestId) {
+      setStatusText("Still loading test info. Try again.");
+      return false;
+    }
+
     const payload = {
+      test_id: currentTestId,
       question_id: question.id,
       student_user_id: userId,
       status: "submitted",
@@ -435,7 +589,7 @@ export default function QuestionPage() {
 
     const { data, error } = await supabase
       .from("answers")
-      .upsert(payload, { onConflict: "question_id,student_user_id" })
+      .upsert(payload, { onConflict: "test_id,question_id,student_user_id" })
       .select(
         "id, question_id, student_user_id, status, draft_text, submitted_text",
       )
@@ -448,10 +602,17 @@ export default function QuestionPage() {
 
     setAnswerRow(data as any);
     lastSavedDraftRef.current = draft;
+    setLastSavedDraft(draft);
 
     setStatusByQuestionId((prev) => ({
       ...prev,
       [question.id]: "submitted",
+    }));
+
+    // keep the map used for tile completeness checks in sync for the current question
+    setAnswerTextByQuestionId((prev) => ({
+      ...prev,
+      [question.id]: draft,
     }));
 
     setStatusText("✅ Submitted");
@@ -727,7 +888,7 @@ export default function QuestionPage() {
                   {questionNumber}
                 </div>
 
-                <div
+                                <div
                   style={{
                     fontSize: 19,
                     lineHeight: 1.3,
@@ -736,9 +897,8 @@ export default function QuestionPage() {
                     maxWidth: 980,
                   }}
                 >
-                  <span style={{ fontWeight: 400 }}>{question.title}</span>
                   {question.prompt ? (
-                    <span style={{ fontWeight: 400 }}> {question.prompt}</span>
+                    <span style={{ fontWeight: 400 }}>{question.prompt}</span>
                   ) : null}
                   <span
                     style={{
@@ -832,6 +992,7 @@ export default function QuestionPage() {
                   ))}
                 </div>
               )}
+
               {isFinalized ? (
                 <div
                   style={{
@@ -903,27 +1064,113 @@ export default function QuestionPage() {
                   </div>
                 </div>
 
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  disabled={isSubmitted || isFinalized}
-                  rows={12}
-                  style={{
-                    width: "100%",
-                    minHeight: 96,
-                    resize: "vertical",
-                    border: "none",
-                    outline: "none",
-                    background: "#efefef",
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                    fontSize: 17,
-                    lineHeight: 1.45,
-                    color: "#222",
-                    padding: "12px 42px 12px 14px",
-                    boxSizing: "border-box",
-                  }}
-                  placeholder="Type your answer here..."
-                />
+                {parts.length > 0 ? (
+                  <div style={{ padding: "12px 42px 12px 14px" }}>
+                    {parts.map((p) => (
+                      <div key={p.id} style={{ marginBottom: 16 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 34,
+                              height: 34,
+                              background: "#35c0cd",
+                              color: "#fff",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 18,
+                              fontWeight: 400,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {p.part_label}
+                          </div>
+
+                          <div
+                            style={{
+                              flex: 1,
+                              background: "#e9e9e9",
+                              border: "1px solid #d4d4d4",
+                              padding: "10px 12px",
+                              fontSize: 16,
+                              color: "#202020",
+                            }}
+                          >
+                            {p.prompt}
+                            <span
+                              style={{
+                                marginLeft: 10,
+                                fontWeight: 700,
+                                color: "#111",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              [{p.marks}]
+                            </span>
+                          </div>
+                        </div>
+
+                        <textarea
+                          value={partAnswers[p.part_label] ?? ""}
+                          onChange={(e) => {
+                            const next = {
+                              ...partAnswers,
+                              [p.part_label]: e.target.value,
+                            };
+                            setPartAnswers(next);
+                            setDraft(serializePartAnswers(next));
+                          }}
+                          disabled={isSubmitted || isFinalized}
+                          rows={6}
+                          style={{
+                            width: "100%",
+                            resize: "vertical",
+                            border: "1px solid #d1d5db",
+                            outline: "none",
+                            background: "#ffffff",
+                            fontFamily: "Arial, Helvetica, sans-serif",
+                            fontSize: 16,
+                            lineHeight: 1.45,
+                            color: "#222",
+                            padding: "10px 12px",
+                            boxSizing: "border-box",
+                            borderRadius: 10,
+                          }}
+                          placeholder={`Type your answer for part ${p.part_label}...`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    disabled={isSubmitted || isFinalized}
+                    rows={12}
+                    style={{
+                      width: "100%",
+                      minHeight: 96,
+                      resize: "vertical",
+                      border: "none",
+                      outline: "none",
+                      background: "#efefef",
+                      fontFamily: "Arial, Helvetica, sans-serif",
+                      fontSize: 17,
+                      lineHeight: 1.45,
+                      color: "#222",
+                      padding: "12px 42px 12px 14px",
+                      boxSizing: "border-box",
+                    }}
+                    placeholder="Type your answer here..."
+                  />
+                )}
               </div>
 
               <div
@@ -1052,23 +1299,42 @@ export default function QuestionPage() {
                   </div>
 
                   <button
-                    onClick={saveAndNext}
-                    disabled={!nextNum || isSubmitted || isFinalized}
+                    onClick={async () => {
+                      const ok = await saveDraft();
+                      if (!ok) return;
+                      if (nextNum) router.push(`/q/${nextNum}`);
+                    }}
+                    disabled={
+                      isSubmitted ||
+                      isFinalized ||
+                      draft.trim().length === 0 ||
+                      draft === lastSavedDraft
+                    }
                     style={{
                       height: 30,
                       border: "1px solid #8ab63f",
                       background:
-                        !nextNum || isSubmitted ? "#a7bf82" : "#7fb43d",
+                        isSubmitted ||
+                        isFinalized ||
+                        draft.trim().length === 0 ||
+                        draft === lastSavedDraft
+                          ? "#a7bf82"
+                          : "#7fb43d",
                       color: "#fff",
                       fontSize: 12,
                       fontWeight: 400,
                       cursor:
-                        !nextNum || isSubmitted ? "not-allowed" : "pointer",
+                        isSubmitted ||
+                        isFinalized ||
+                        draft.trim().length === 0 ||
+                        draft === lastSavedDraft
+                          ? "not-allowed"
+                          : "pointer",
                       width: 198,
                       justifySelf: "end",
                     }}
                   >
-                    Save &amp; Next
+                    {nextNum ? "Save & Next" : "Save"}
                   </button>
                 </div>
               </div>
@@ -1115,7 +1381,9 @@ export default function QuestionPage() {
               Questions
             </div>
 
-            <div style={{ marginBottom: 10, fontSize: 14 }}>Section A</div>
+            <div style={{ marginBottom: 10, fontSize: 14 }}>
+              Section {question?.section ?? "A"}
+            </div>
 
             <div
               style={{
@@ -1131,13 +1399,30 @@ export default function QuestionPage() {
               ).map((n) => {
                 const isCurrent = n === questionNumber;
                 const st = getTileState(n);
+                const qidForN = questionsIdByNumber[n] ?? "";
 
-                const isSubmittedTile = st === "submitted";
+                const partLabels = qidForN
+                  ? (partLabelsByQuestionId[qidForN] ?? [])
+                  : [];
+
+                const hasParts = partLabels.length > 0;
+                const savedText = qidForN
+                  ? (answerTextByQuestionId[qidForN] ?? "")
+                  : "";
+
+                // Option A: submitted tile only when ALL parts have content
+                const partsComplete = hasParts
+                  ? allPartsAnswered(savedText, partLabels)
+                  : true;
+
+                const isSubmittedTile = st === "submitted" && partsComplete;
                 const isCurrentTile = isCurrent;
+                const isDraftLike =
+                  st === "draft" || (st === "submitted" && !partsComplete);
 
                 let tileBg = "#6a6a6a";
-                if (isSubmittedTile) tileBg = "#79bb3b";
                 if (isCurrentTile) tileBg = "#35c0cd";
+                else if (isSubmittedTile) tileBg = "#79bb3b";
 
                 return (
                   <button
@@ -1160,7 +1445,7 @@ export default function QuestionPage() {
                     }}
                     title={isCurrent ? "Current question" : `Go to Q${n}`}
                   >
-                    {st === "draft" && !isCurrentTile ? (
+                    {isDraftLike && !isCurrentTile ? (
                       <span
                         style={{
                           position: "absolute",

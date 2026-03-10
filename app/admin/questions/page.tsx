@@ -1,10 +1,10 @@
 "use client";
+
 // ===== ANCHOR: admin-questions-page =====
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
-import AdminGate from "../AdminGate";
 
 type QuestionRow = {
   id: string;
@@ -12,30 +12,127 @@ type QuestionRow = {
   title: string;
   prompt: string;
   marks: number;
+  section: "A" | "B" | "C" | null;
+  created_at?: string;
 };
+
+type PartRow = {
+  id: string;
+  question_id: string;
+  part_label: string; // 'a', 'b', ...
+  prompt: string;
+  marks: number;
+  sort_order: number;
+  created_at?: string;
+};
+
+function normLabel(s: string) {
+  return s.trim().toLowerCase();
+}
+
+function nextLabel(existing: string[]) {
+  const used = new Set(existing.map((x) => normLabel(x)));
+  const alphabet = "abcdefghijklmnopqrstuvwxyz".split("");
+  for (const ch of alphabet) {
+    if (!used.has(ch)) return ch;
+  }
+  // fallback if someone adds 26 parts (unlikely)
+  return `p${existing.length + 1}`;
+}
 
 export default function AdminQuestionsPage() {
   const router = useRouter();
+  const sb = supabase;
 
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [email, setEmail] = useState("");
-
-  const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [status, setStatus] = useState("");
 
-  // Form state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [qNum, setQNum] = useState<number>(1);
-  const [title, setTitle] = useState<string>("");
-  const [prompt, setPrompt] = useState<string>("");
-  const [marks, setMarks] = useState<number>(0);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const [questions, setQuestions] = useState<QuestionRow[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+
+  // Base question fields
+  const [qNum, setQNum] = useState<string>("");
+  const [qTitle, setQTitle] = useState<string>("");
+  const [qPrompt, setQPrompt] = useState<string>("");
+  const [qMarks, setQMarks] = useState<string>("0");
+  const [qSection, setQSection] = useState<"A" | "B" | "C" | "">("");
+
+  // Parts for selected question
+  const [parts, setParts] = useState<PartRow[]>([]);
+
+  const selectedQuestion = useMemo(
+    () => questions.find((q) => q.id === selectedId) ?? null,
+    [questions, selectedId],
+  );
+
+  async function loadAll() {
+    if (!sb) return;
+
+    const { data: qData, error: qErr } = await sb
+      .from("questions")
+      .select("id, question_number, title, prompt, marks, section, created_at")
+      .order("question_number", { ascending: true });
+
+    if (qErr) {
+      setStatus(`❌ Could not load questions: ${qErr.message}`);
+      setQuestions([]);
+      return;
+    }
+
+    setQuestions((qData ?? []) as any);
+
+    if (selectedId) {
+      await loadParts(selectedId);
+    }
+  }
+
+  async function loadParts(questionId: string) {
+    if (!sb) return;
+
+    const { data, error } = await sb
+      .from("question_parts")
+      .select("id, question_id, part_label, prompt, marks, sort_order, created_at")
+      .eq("question_id", questionId)
+      .order("sort_order", { ascending: true });
+
+    if (error) {
+      setStatus(`❌ Could not load sub-questions: ${error.message}`);
+      setParts([]);
+      return;
+    }
+
+    setParts((data ?? []) as any);
+  }
+
+  function clearEditor() {
+    setSelectedId("");
+    setQNum("");
+    setQTitle("");
+    setQPrompt("");
+    setQMarks("0");
+    setQSection("");
+    setParts([]);
+    setStatus("");
+  }
+
+  function loadIntoEditor(q: QuestionRow) {
+    setSelectedId(q.id);
+    setQNum(String(q.question_number ?? ""));
+    setQTitle(q.title ?? "");
+    setQPrompt(q.prompt ?? "");
+    setQMarks(String(q.marks ?? 0));
+    setQSection((q.section as any) ?? "");
+    setStatus("");
+    void loadParts(q.id);
+  }
 
   useEffect(() => {
-    // ===== ANCHOR: admin-questions-boot =====
-    if (!supabase) {
+    if (!sb) {
       setStatus(
-        "Supabase is not configured. Check Vercel → Settings → Environment Variables.",
+        "Supabase is not configured. Check NEXT_PUBLIC_SUPABASE_URL / ANON KEY.",
       );
       setLoading(false);
       return;
@@ -47,365 +144,521 @@ export default function AdminQuestionsPage() {
       setLoading(true);
       setStatus("");
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
+      const { data: s } = await sb.auth.getSession();
+      const session = s.session;
 
       if (!session) {
-        router.push("/login");
+        router.replace("/login?next=/admin/questions");
         return;
       }
 
       if (cancelled) return;
 
-      setEmail(session.user.email ?? "");
+      const emailLower = (session.user.email ?? "").toLowerCase().trim();
+      setAdminEmail(emailLower);
 
-      // Admin check via allowlist table (RPC)
-      const { data: isAdmin, error: adminErr } = await supabase.rpc(
+      const { data: adminOk, error: adminErr } = await sb.rpc(
         "is_current_user_admin",
       );
 
       if (adminErr) {
+        setIsAdmin(false);
         setStatus(`Admin check failed: ${adminErr.message}`);
         setLoading(false);
         return;
       }
 
-      setIsAdmin(Boolean(isAdmin));
-
-      if (!isAdmin) {
+      if (!adminOk) {
+        setIsAdmin(false);
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
       }
 
-      await loadQuestions();
+      setIsAdmin(true);
+      await loadAll();
       setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, sb]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ===== ANCHOR: admin-questions-load =====
-  async function loadQuestions() {
-    if (!supabase) return;
-    const { data, error } = await supabase
-      .from("questions")
-      .select("id, question_number, title, prompt, marks")
-      .order("question_number", { ascending: true });
-
-    if (error) {
-      setStatus(`Could not load questions: ${error.message}`);
-      return;
-    }
-
-    setQuestions((data ?? []) as any);
-  }
-
-  // ===== ANCHOR: admin-questions-reset-form =====
-  function resetForm() {
-    setEditingId(null);
-    setQNum(1);
-    setTitle("");
-    setPrompt("");
-    setMarks(0);
-  }
-
-  // ===== ANCHOR: admin-questions-start-edit =====
-  function startEdit(q: QuestionRow) {
-    setEditingId(q.id);
-    setQNum(q.question_number);
-    setTitle(q.title ?? "");
-    setPrompt(q.prompt ?? "");
-    setMarks(Number(q.marks ?? 0));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  // ===== ANCHOR: admin-questions-save =====
   async function saveQuestion() {
-    if (!supabase) return;
-    if (!isAdmin) return;
+    if (!sb) return;
+    setStatus("");
 
-    setStatus("Saving...");
-
-    if (!qNum || qNum < 1) {
-      setStatus("Question number must be 1 or higher.");
-      return;
-    }
-    if (!prompt.trim()) {
-      setStatus("Prompt cannot be empty.");
+        const marks = parseInt(qMarks, 10);
+    if (!Number.isFinite(marks) || marks < 0) {
+      setStatus("❌ Marks must be 0 or more.");
       return;
     }
 
-    if (editingId) {
-      // Update existing
-      const { error } = await supabase
+    const nextQuestionNumber =
+      questions.length > 0
+        ? Math.max(...questions.map((q) => q.question_number || 0)) + 1
+        : 1;
+    if (!Number.isFinite(marks) || marks < 0) {
+      setStatus("❌ Marks must be 0 or more.");
+      return;
+    }
+
+    const title = qTitle.trim();
+    const prompt = qPrompt.trim();
+    const section = (qSection || null) as any;
+
+    if (!title) {
+      setStatus("❌ Title is required.");
+      return;
+    }
+
+    // prompt can be blank if you only use parts
+    setStatus(selectedId ? "Saving question…" : "Creating question…");
+
+    if (!selectedId) {
+      const { data, error } = await sb
         .from("questions")
-        .update({
-          question_number: qNum,
+                .insert({
+          question_number: nextQuestionNumber,
           title,
           prompt,
           marks,
+          section,
         })
-        .eq("id", editingId);
+        .select("id")
+        .single();
 
       if (error) {
-        setStatus(`❌ Could not update: ${error.message}`);
+        setStatus(`❌ Create failed: ${error.message}`);
         return;
       }
 
-      setStatus("✅ Updated");
-    } else {
-      // Insert new
-      const { error } = await supabase.from("questions").insert({
-        question_number: qNum,
-        title,
-        prompt,
-        marks,
-      });
-
-      if (error) {
-        setStatus(`❌ Could not create: ${error.message}`);
-        return;
-      }
-
-      setStatus("✅ Created");
-    }
-
-    resetForm();
-    await loadQuestions();
-  }
-
-  // ===== ANCHOR: admin-questions-delete =====
-  async function deleteQuestion(id: string) {
-    if (!supabase) return;
-    if (!isAdmin) return;
-
-    const ok = window.confirm(
-      "Delete this question? This also deletes related answers.",
-    );
-    if (!ok) return;
-
-    setStatus("Deleting...");
-
-    const { error } = await supabase.from("questions").delete().eq("id", id);
-    if (error) {
-      setStatus(`❌ Could not delete: ${error.message}`);
+      const newId = String((data as any)?.id ?? "");
+      setSelectedId(newId);
+      setStatus("✅ Created. You can now add sub-questions (a/b/…).");
+      await loadAll();
+      await loadParts(newId);
       return;
     }
 
-    setStatus("✅ Deleted");
-    await loadQuestions();
+    const { error } = await sb
+      .from("questions")
+            .update({
+        title,
+        prompt,
+        marks,
+        section,
+      })
+      .eq("id", selectedId);
+
+    if (error) {
+      setStatus(`❌ Save failed: ${error.message}`);
+      return;
+    }
+
+    setStatus("✅ Saved.");
+    await loadAll();
+  }
+
+  async function deleteQuestion() {
+    if (!sb) return;
+    if (!selectedId) return;
+
+    const ok = window.confirm(
+      "Delete this question AND its sub-questions? This cannot be undone.",
+    );
+    if (!ok) return;
+
+    setStatus("Deleting question…");
+
+    const { error } = await sb.from("questions").delete().eq("id", selectedId);
+
+    if (error) {
+      setStatus(`❌ Delete failed: ${error.message}`);
+      return;
+    }
+
+    setStatus("✅ Deleted.");
+    clearEditor();
+    await loadAll();
+  }
+
+  async function addPart() {
+    if (!sb) return;
+    if (!selectedId) {
+      setStatus("❌ Create or select a question first.");
+      return;
+    }
+
+    const labels = parts.map((p) => p.part_label);
+    const label = nextLabel(labels);
+
+    const nextSort = parts.length ? Math.max(...parts.map((p) => p.sort_order)) + 1 : 1;
+
+    setStatus("Adding sub-question…");
+
+    const { error } = await sb.from("question_parts").insert({
+      question_id: selectedId,
+      part_label: label,
+      prompt: "",
+      marks: 0,
+      sort_order: nextSort,
+    });
+
+    if (error) {
+      setStatus(`❌ Could not add sub-question: ${error.message}`);
+      return;
+    }
+
+    setStatus(`✅ Added part ${label}.`);
+    await loadParts(selectedId);
+  }
+
+  async function updatePart(partId: string, patch: Partial<PartRow>) {
+    if (!sb) return;
+
+    const { error } = await sb.from("question_parts").update(patch).eq("id", partId);
+    if (error) {
+      setStatus(`❌ Could not save part: ${error.message}`);
+      return;
+    }
+
+    // optimistic update in UI
+    setParts((prev) =>
+      prev.map((p) => (p.id === partId ? { ...p, ...(patch as any) } : p)),
+    );
+  }
+
+  async function deletePart(partId: string) {
+    if (!sb) return;
+    const p = parts.find((x) => x.id === partId);
+    const ok = window.confirm(`Delete part ${p?.part_label ?? ""}?`);
+    if (!ok) return;
+
+    const { error } = await sb.from("question_parts").delete().eq("id", partId);
+    if (error) {
+      setStatus(`❌ Could not delete part: ${error.message}`);
+      return;
+    }
+
+    setStatus("✅ Sub-question deleted.");
+    setParts((prev) => prev.filter((x) => x.id !== partId));
+  }
+
+  async function movePart(partId: string, dir: -1 | 1) {
+    if (!sb) return;
+
+    const idx = parts.findIndex((p) => p.id === partId);
+    if (idx < 0) return;
+
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= parts.length) return;
+
+    const a = parts[idx];
+    const b = parts[swapIdx];
+
+    // Swap sort_order
+    const { error: e1 } = await sb
+      .from("question_parts")
+      .update({ sort_order: b.sort_order })
+      .eq("id", a.id);
+
+    if (e1) {
+      setStatus(`❌ Reorder failed: ${e1.message}`);
+      return;
+    }
+
+    const { error: e2 } = await sb
+      .from("question_parts")
+      .update({ sort_order: a.sort_order })
+      .eq("id", b.id);
+
+    if (e2) {
+      setStatus(`❌ Reorder failed: ${e2.message}`);
+      await loadParts(selectedId);
+      return;
+    }
+
+    await loadParts(selectedId);
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 1100 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 900 }}>Admin: Questions</h1>
-          <div style={{ marginTop: 6, opacity: 0.75, fontSize: 14 }}>
-            Logged in as: <b>{email || "…"}</b>
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
+      <div className="max-w-6xl mx-auto space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-extrabold">Admin: Questions</h1>
+            <div className="text-sm text-slate-400 mt-1">
+              Logged in as: <b className="text-slate-200">{adminEmail || "…"}</b>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-center">
+            <Link
+              href="/"
+              className="text-xs rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900"
+            >
+              Home
+            </Link>
+            <Link href="/admin" className="underline hover:text-slate-200">
+              Admin Hub
+            </Link>
           </div>
         </div>
-      </div>
 
-      {loading ? (
-        <p style={{ marginTop: 18 }}>Loading…</p>
-      ) : !isAdmin ? (
-        <p style={{ marginTop: 18, color: "crimson" }}>{status}</p>
-      ) : (
-        <>
-          {/* ===== ANCHOR: admin-questions-form ===== */}
-          <div
-            style={{
-              marginTop: 18,
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              padding: 14,
-            }}
-          >
-            <div style={{ fontWeight: 900 }}>
-              {editingId ? "Edit question" : "Add a new question"}
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "140px 1fr",
-                gap: 10,
-                marginTop: 12,
-                alignItems: "center",
-              }}
-            >
-              <label style={{ fontWeight: 700 }}>Question #</label>
-              <input
-                type="number"
-                value={qNum}
-                onChange={(e) => setQNum(Number(e.target.value))}
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                  maxWidth: 220,
-                }}
-              />
-
-              <label style={{ fontWeight: 700 }}>Title</label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Short title (optional)"
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                }}
-              />
-
-              <label style={{ fontWeight: 700 }}>Prompt</label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={4}
-                placeholder="Full question text"
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                  fontFamily: "inherit",
-                }}
-              />
-
-              <label style={{ fontWeight: 700 }}>Marks</label>
-              <input
-                type="number"
-                value={marks}
-                onChange={(e) => setMarks(Number(e.target.value))}
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  border: "1px solid #ccc",
-                  maxWidth: 220,
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-              <button
-                onClick={saveQuestion}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #333",
-                  cursor: "pointer",
-                }}
-              >
-                {editingId ? "Save changes" : "Create question"}
-              </button>
-
-              <button
-                onClick={resetForm}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #333",
-                  cursor: "pointer",
-                }}
-              >
-                Clear
-              </button>
-
-              {status ? (
-                <div style={{ marginLeft: "auto", opacity: 0.85 }}>
-                  {status}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {/* ===== ANCHOR: admin-questions-list ===== */}
-          <div style={{ marginTop: 18 }}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>
-              Existing questions
-            </div>
-
-            {questions.length === 0 ? (
-              <p>No questions yet.</p>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {questions.map((q) => (
-                  <div
-                    key={q.id}
-                    style={{
-                      border: "1px solid #ddd",
-                      borderRadius: 12,
-                      padding: 12,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900 }}>
-                        Q{q.question_number}: {q.title}{" "}
-                        <span style={{ opacity: 0.7 }}>[{q.marks}]</span>
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 6,
-                          opacity: 0.75,
-                          fontSize: 14,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          maxWidth: 760,
-                        }}
-                        title={q.prompt}
-                      >
-                        {q.prompt}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => startEdit(q)}
-                        style={{
-                          padding: "8px 10px",
-                          borderRadius: 10,
-                          border: "1px solid #333",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => deleteQuestion(q.id)}
-                        style={{
-                          padding: "8px 10px",
-                          borderRadius: 10,
-                          border: "1px solid #333",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
+        {loading ? (
+          <div className="text-slate-300">Loading…</div>
+        ) : !isAdmin ? (
+          <div className="text-red-300">{status || "Admin only."}</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Left: list */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-extrabold">All Questions</div>
+                <button
+                  onClick={clearEditor}
+                  className="text-xs rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900"
+                >
+                  New
+                </button>
               </div>
-            )}
+
+              <div className="mt-3 space-y-2">
+                {questions.length === 0 ? (
+                  <div className="text-slate-400 text-sm">
+                    No questions yet.
+                  </div>
+                ) : (
+                  questions.map((q) => {
+                    const active = q.id === selectedId;
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => loadIntoEditor(q)}
+                        className={`w-full text-left rounded-lg border px-3 py-3 hover:bg-slate-900 ${
+                          active
+                            ? "border-cyan-500 bg-cyan-900/10"
+                            : "border-slate-800 bg-slate-900/20"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold truncate">
+                            Q{q.question_number}: {q.title}
+                          </div>
+                          <div className="text-xs text-slate-400 whitespace-nowrap">
+                            {q.section ? `Section ${q.section}` : "No section"} •{" "}
+                            {q.marks} marks
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1 truncate">
+                          {q.prompt || "(no main prompt)"}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right: editor */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="font-extrabold">
+                  {selectedId ? "Edit Question" : "Create Question"}
+                </div>
+                {selectedId ? (
+                  <button
+                    onClick={deleteQuestion}
+                    className="text-xs rounded-md border border-red-700 px-3 py-2 hover:bg-red-900/20 text-red-200"
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-400">Section</div>
+                  <select
+                    value={qSection}
+                    onChange={(e) => setQSection(e.target.value as any)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                  >
+                    <option value="">(none)</option>
+                    <option value="A">Section A</option>
+                    <option value="B">Section B</option>
+                    <option value="C">Section C</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="space-y-1">
+                <div className="text-xs text-slate-400">Title</div>
+                <input
+                  value={qTitle}
+                  onChange={(e) => setQTitle(e.target.value)}
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                  placeholder="Short title"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-400">Marks (overall)</div>
+                  <input
+                    value={qMarks}
+                    onChange={(e) => setQMarks(e.target.value)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                    placeholder="e.g. 6"
+                  />
+                </label>
+
+                <div className="text-xs text-slate-400 flex items-end">
+                  Tip: If you use sub-questions, you can set overall marks to
+                  total, or leave it as-is.
+                </div>
+              </div>
+
+              <label className="space-y-1">
+                <div className="text-xs text-slate-400">Main prompt (optional)</div>
+                <textarea
+                  value={qPrompt}
+                  onChange={(e) => setQPrompt(e.target.value)}
+                  className="w-full min-h-[90px] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                  placeholder="If the question has a general scenario / stem, put it here. Sub-questions go below."
+                />
+              </label>
+
+              <div className="flex gap-3 items-center">
+                <button
+                  onClick={saveQuestion}
+                  className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 hover:bg-slate-900 font-semibold"
+                >
+                  {selectedId ? "Save" : "Create"}
+                </button>
+
+                <button
+                  onClick={() => selectedId && loadParts(selectedId)}
+                  disabled={!selectedId}
+                  className="rounded-lg border border-slate-700 px-4 py-2 hover:bg-slate-900 disabled:opacity-50"
+                >
+                  Refresh parts
+                </button>
+
+                <div className="text-sm text-slate-300 ml-auto">{status}</div>
+              </div>
+
+              {/* Sub-questions */}
+              <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">Sub-questions (a/b/c…)</div>
+                  <button
+                    onClick={addPart}
+                    className="text-xs rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900 disabled:opacity-50"
+                    disabled={!selectedId}
+                  >
+                    + Add sub-question
+                  </button>
+                </div>
+
+                {!selectedId ? (
+                  <div className="text-xs text-slate-400">
+                    Create the question first, then add sub-questions.
+                  </div>
+                ) : parts.length === 0 ? (
+                  <div className="text-xs text-slate-400">
+                    No sub-questions yet. This will behave like a single question.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {parts.map((p, idx) => (
+                      <div
+                        key={p.id}
+                        className="rounded-lg border border-slate-800 bg-slate-900/20 p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold">
+                            Part {p.part_label}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => movePart(p.id, -1)}
+                              disabled={idx === 0}
+                              className="text-xs rounded-md border border-slate-700 px-2 py-1 hover:bg-slate-900 disabled:opacity-50"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              onClick={() => movePart(p.id, 1)}
+                              disabled={idx === parts.length - 1}
+                              className="text-xs rounded-md border border-slate-700 px-2 py-1 hover:bg-slate-900 disabled:opacity-50"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              onClick={() => deletePart(p.id)}
+                              className="text-xs rounded-md border border-red-700 px-2 py-1 hover:bg-red-900/20 text-red-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label className="space-y-1">
+                            <div className="text-xs text-slate-400">Label</div>
+                            <input
+                              value={p.part_label}
+                              onChange={(e) =>
+                                updatePart(p.id, {
+                                  part_label: normLabel(e.target.value),
+                                } as any)
+                              }
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                            />
+                          </label>
+
+                          <label className="space-y-1">
+                            <div className="text-xs text-slate-400">Marks</div>
+                            <input
+                              value={String(p.marks ?? 0)}
+                              onChange={(e) =>
+                                updatePart(p.id, {
+                                  marks: parseInt(e.target.value || "0", 10) || 0,
+                                } as any)
+                              }
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="space-y-1">
+                          <div className="text-xs text-slate-400">Prompt</div>
+                          <textarea
+                            value={p.prompt}
+                            onChange={(e) =>
+                              updatePart(p.id, { prompt: e.target.value } as any)
+                            }
+                            className="w-full min-h-[80px] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                            placeholder="Part prompt…"
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-500">
+                Next steps: student view rendering + PDF export splitting.
+              </div>
+            </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </main>
   );
 }

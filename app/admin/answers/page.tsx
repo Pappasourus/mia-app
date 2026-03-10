@@ -19,6 +19,13 @@ type QuestionRow = {
   prompt: string;
 };
 
+type TestRow = {
+  id: string;
+  name: string;
+  is_finalized: boolean;
+  created_at: string;
+};
+
 type AnswerRow = {
   question_id: string;
   status: "not_started" | "draft" | "submitted";
@@ -48,6 +55,9 @@ export default function AdminAnswersPage() {
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
   const [openQuestionId, setOpenQuestionId] = useState<string>("");
+  const [currentTestId, setCurrentTestId] = useState<string>("");
+  const [tests, setTests] = useState<TestRow[]>([]);
+  const [selectedTestId, setSelectedTestId] = useState<string>("");
 
   const answerByQid = useMemo(() => {
     const m = new Map<string, AnswerRow>();
@@ -102,6 +112,40 @@ export default function AdminAnswersPage() {
         return;
       }
 
+      // Load current test id (used to filter answers)
+      const { data: settings, error: sErr } = await sb
+        .from("app_settings")
+        .select("current_test_id")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (sErr) {
+        setStatusMsg(`Could not load app settings: ${sErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const testId = String((settings as any)?.current_test_id ?? "");
+      setCurrentTestId(testId);
+      // Load all tests for dropdown
+      const { data: tData, error: tErr } = await sb
+        .from("tests")
+        .select("id, name, is_finalized, created_at")
+        .order("created_at", { ascending: false });
+
+      if (tErr) {
+        setStatusMsg(`Could not load tests: ${tErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const tRows = (tData ?? []) as any as TestRow[];
+      setTests(tRows);
+
+      // Default selection: current test if set, otherwise newest
+      const defaultId = testId || tRows[0]?.id || "";
+      setSelectedTestId(defaultId);
+
       // Load students
       const { data: stuData, error: stuErr } = await sb
         .from("profiles")
@@ -123,7 +167,7 @@ export default function AdminAnswersPage() {
       // Load questions
       const { data: qData, error: qErr } = await sb
         .from("questions")
-        .select("id, question_number, title, marks, prompt")
+        .select("id, question_number, title, marks, prompt, section")
         .order("question_number", { ascending: true });
 
       if (qErr) {
@@ -151,6 +195,11 @@ export default function AdminAnswersPage() {
       return;
     }
 
+    if (!selectedTestId) {
+      setAnswers([]);
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
@@ -158,7 +207,8 @@ export default function AdminAnswersPage() {
       const { data, error } = await sb
         .from("answers")
         .select("question_id, status, draft_text, submitted_text")
-        .eq("student_user_id", selectedStudentId);
+        .eq("student_user_id", selectedStudentId)
+        .eq("test_id", selectedTestId);
 
       if (cancelled) return;
 
@@ -175,13 +225,26 @@ export default function AdminAnswersPage() {
     return () => {
       cancelled = true;
     };
-  }, [sb, isAdmin, selectedStudentId]);
+  }, [sb, isAdmin, selectedStudentId, selectedTestId]);
 
   const selectedStudentEmail =
     students.find((s) => s.user_id === selectedStudentId)?.email ?? "";
   // ===== ANCHOR: admin-answers-export-pdf =====
   function safePdfName(s: string) {
     return (s || "student").replace(/[^a-z0-9]+/gi, "_").slice(0, 50);
+  }
+
+  function tryParsePartJson(s: string): Record<string, string> | null {
+    try {
+      const obj = JSON.parse(s || "{}");
+      if (!obj || typeof obj !== "object") return null;
+      // basic sanity: must have at least one key
+      const keys = Object.keys(obj);
+      if (keys.length === 0) return null;
+      return obj as any;
+    } catch {
+      return null;
+    }
   }
   // ===== ANCHOR: admin-answers-export-all-pdfs =====
   async function exportAllStudentsPdfs() {
@@ -227,8 +290,37 @@ export default function AdminAnswersPage() {
       y += 18;
 
       const lineGap = 12;
+      // Load all sub-questions for the current test’s questions (once per export)
+      const qids = questions.map((q) => q.id);
+      const { data: partsRows } = await supabase
+        .from("question_parts")
+        .select("question_id, part_label, marks, sort_order")
+        .in("question_id", qids);
 
-      for (const q of questions) {
+      const partsByQid = new Map<string, any[]>();
+      for (const p of partsRows ?? []) {
+        const arr = partsByQid.get((p as any).question_id) ?? [];
+        arr.push(p);
+        partsByQid.set((p as any).question_id, arr);
+      }
+      for (const [qid, arr] of partsByQid.entries()) {
+        arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        partsByQid.set(qid, arr);
+      }
+      const sectionOrder: Record<string, number> = { A: 1, B: 2, C: 3 };
+
+      const orderedQuestions = [...questions].sort((a: any, b: any) => {
+        const sa = String(a.section ?? "A");
+        const sb = String(b.section ?? "A");
+        const oa = sectionOrder[sa] ?? 99;
+        const ob = sectionOrder[sb] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return Number(a.question_number ?? 0) - Number(b.question_number ?? 0);
+      });
+
+      let currentSection: string | null = null;
+
+      for (const q of orderedQuestions) {
         // NOTE: answers state will be for the currently selected student
         const a = answerByQid.get(q.id);
         const st = a?.status ?? "not_started";
@@ -254,20 +346,56 @@ export default function AdminAnswersPage() {
         doc.text(`Status: ${labelStatus(st)}`, margin, y);
         y += 14;
 
-        const body = answerText.trim() ? answerText : "(empty)";
-        const lines = doc.splitTextToSize(body, maxW);
+        const asParts = tryParsePartJson(answerText);
 
-        doc.setFontSize(10);
-        for (const line of lines) {
-          if (y > pageH - margin) {
-            doc.addPage();
-            y = margin;
+        // If the answer is JSON part-answers AND this question has parts, print each part separately
+        const partMeta = partsByQid.get(q.id) ?? [];
+        if (asParts && partMeta.length > 0) {
+          for (const p of partMeta) {
+            const label = String((p as any).part_label ?? "").trim();
+            const pm = Number((p as any).marks ?? 0);
+
+            if (y > pageH - margin - 40) {
+              doc.addPage();
+              y = margin;
+            }
+
+            doc.setFontSize(11);
+            doc.text(`Q${q.question_number}${label} [${pm}]`, margin, y);
+            y += 14;
+
+            const body = String(asParts[label] ?? "").trim() || "(empty)";
+            const lines = doc.splitTextToSize(body, maxW);
+
+            doc.setFontSize(10);
+            for (const line of lines) {
+              if (y > pageH - margin) {
+                doc.addPage();
+                y = margin;
+              }
+              doc.text(String(line), margin, y);
+              y += lineGap;
+            }
+
+            y += 10;
           }
-          doc.text(String(line), margin, y);
-          y += lineGap;
-        }
+        } else {
+          // Normal single-answer question
+          const body = answerText.trim() ? answerText : "(empty)";
+          const lines = doc.splitTextToSize(body, maxW);
 
-        y += 10;
+          doc.setFontSize(10);
+          for (const line of lines) {
+            if (y > pageH - margin) {
+              doc.addPage();
+              y = margin;
+            }
+            doc.text(String(line), margin, y);
+            y += lineGap;
+          }
+
+          y += 10; // extra space between questions
+        }
       }
 
       const filename = `answers-${safePdfName(s.email)}.pdf`;
@@ -312,8 +440,51 @@ export default function AdminAnswersPage() {
     y += 18;
 
     const lineGap = 12;
+    // Load all sub-questions for the current test’s questions (once per export)
+    const qids = questions.map((q) => q.id);
+    const { data: partsRows } = await supabase
+      .from("question_parts")
+      .select("question_id, part_label, marks, sort_order")
+      .in("question_id", qids);
 
-    for (const q of questions) {
+    const partsByQid = new Map<string, any[]>();
+    for (const p of partsRows ?? []) {
+      const arr = partsByQid.get((p as any).question_id) ?? [];
+      arr.push(p);
+      partsByQid.set((p as any).question_id, arr);
+    }
+    for (const [qid, arr] of partsByQid.entries()) {
+      arr.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      partsByQid.set(qid, arr);
+    }
+    const sectionOrder: Record<string, number> = { A: 1, B: 2, C: 3 };
+
+    const orderedQuestions = [...questions].sort((a: any, b: any) => {
+      const sa = String(a.section ?? "A");
+      const sb = String(b.section ?? "A");
+      const oa = sectionOrder[sa] ?? 99;
+      const ob = sectionOrder[sb] ?? 99;
+      if (oa !== ob) return oa - ob;
+      return Number(a.question_number ?? 0) - Number(b.question_number ?? 0);
+    });
+
+    let currentSection: string | null = null;
+
+    for (const q of orderedQuestions) {
+              const sec = String((q as any).section ?? "A");
+
+        if (sec !== currentSection) {
+          currentSection = sec;
+
+          if (y > pageH - margin - 60) {
+            doc.addPage();
+            y = margin;
+          }
+
+          doc.setFontSize(14);
+          doc.text(`Section ${sec}`, margin, y);
+          y += 18;
+        }
       const a = answerByQid.get(q.id);
       const st = a?.status ?? "not_started";
       const answerText =
@@ -337,20 +508,56 @@ export default function AdminAnswersPage() {
       doc.text(`Status: ${labelStatus(st)}`, margin, y);
       y += 14;
 
-      const body = answerText.trim() ? answerText : "(empty)";
-      const lines = doc.splitTextToSize(body, maxW);
+      const asParts = tryParsePartJson(answerText);
 
-      doc.setFontSize(10);
-      for (const line of lines) {
-        if (y > pageH - margin) {
-          doc.addPage();
-          y = margin;
+      // If the answer is JSON part-answers AND this question has parts, print each part separately
+      const partMeta = partsByQid.get(q.id) ?? [];
+      if (asParts && partMeta.length > 0) {
+        for (const p of partMeta) {
+          const label = String((p as any).part_label ?? "").trim();
+          const pm = Number((p as any).marks ?? 0);
+
+          if (y > pageH - margin - 40) {
+            doc.addPage();
+            y = margin;
+          }
+
+          doc.setFontSize(11);
+          doc.text(`Q${q.question_number}${label} [${pm}]`, margin, y);
+          y += 14;
+
+          const body = String(asParts[label] ?? "").trim() || "(empty)";
+          const lines = doc.splitTextToSize(body, maxW);
+
+          doc.setFontSize(10);
+          for (const line of lines) {
+            if (y > pageH - margin) {
+              doc.addPage();
+              y = margin;
+            }
+            doc.text(String(line), margin, y);
+            y += lineGap;
+          }
+
+          y += 10;
         }
-        doc.text(String(line), margin, y);
-        y += lineGap;
-      }
+      } else {
+        // Normal single-answer question
+        const body = answerText.trim() ? answerText : "(empty)";
+        const lines = doc.splitTextToSize(body, maxW);
 
-      y += 10; // extra space between questions
+        doc.setFontSize(10);
+        for (const line of lines) {
+          if (y > pageH - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(String(line), margin, y);
+          y += lineGap;
+        }
+
+        y += 10; // extra space between questions
+      }
     }
 
     doc.save(`answers-${safePdfName(selectedStudentEmail)}.pdf`);
@@ -384,7 +591,6 @@ export default function AdminAnswersPage() {
           <Link href="/admin/media" style={{ textDecoration: "none" }}>
             Admin: Media
           </Link>
-          
         </div>
       </div>
 
@@ -409,6 +615,27 @@ export default function AdminAnswersPage() {
               flexWrap: "wrap",
             }}
           >
+            <div style={{ fontWeight: 900 }}>Test</div>
+            <select
+              value={selectedTestId}
+              onChange={(e) => {
+                setSelectedTestId(e.target.value);
+                setOpenQuestionId("");
+              }}
+              style={{
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                minWidth: 260,
+              }}
+            >
+              {tests.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.is_finalized ? " (Finalized)" : ""}
+                </option>
+              ))}
+            </select>
             <div style={{ fontWeight: 900 }}>Student</div>
             <select
               value={selectedStudentId}

@@ -49,20 +49,21 @@ if (error) {
 
 setStatus("✅ Signed in! Checking access...");
 
-const adminEmail = "riegardts@gmail.com";
+// Check admin status first (admins do NOT need invited_students)
+const emailLower = (data?.user?.email ?? email).toLowerCase().trim();
 
-// IMPORTANT: ensure the client has the session set before any table queries
-if (data?.session?.access_token && data?.session?.refresh_token) {
-  await supabase.auth.setSession({
-    access_token: data.session.access_token,
-    refresh_token: data.session.refresh_token,
-  });
+const { data: isAdmin, error: adminErr } = await supabase.rpc(
+  "is_current_user_admin",
+);
+
+if (adminErr) {
+  await supabase.auth.signOut();
+  setStatus(`❌ Admin check failed: ${adminErr.message}`);
+  return;
 }
 
-// Use the email from auth (most reliable)
-const emailLower = (data?.user?.email ?? email).toLowerCase().trim();
-// Invite-only students: if not admin, must be in invited_students
-if (emailLower !== adminEmail) {
+if (!isAdmin) {
+  // Students: must be invited
   const { data: invite, error: inviteErr } = await supabase
     .from("invited_students")
     .select("id")
@@ -89,7 +90,7 @@ const rawNext = new URLSearchParams(window.location.search).get("next");
 let next = rawNext && rawNext.trim() ? rawNext : "";
 
 if (!next || next === "/") {
-  next = emailLower === adminEmail ? "/admin" : "/q/1";
+  next = isAdmin ? "/admin" : "/q/1";
 }
 
 setStatus(`✅ Signed in! Redirecting to ${next}...`);
@@ -104,7 +105,7 @@ async function handleSignUp() {
     return;
   }
 
-  const adminEmail = "riegardts@gmail.com";
+  
   const emailLower = email.toLowerCase().trim();
 
   if (!emailLower) {
@@ -116,10 +117,20 @@ async function handleSignUp() {
     return;
   }
 
-  // Invite-only: non-admin must be invited BEFORE creating an account
-if (emailLower !== adminEmail) {
-  setStatus("Checking invite…");
+  // Admins: allowed if email is in admin_emails (via RPC). Students: must be invited.
+setStatus("Checking access…");
 
+const { data: isAdmin, error: adminErr } = await supabase.rpc(
+  "is_current_user_admin_email",
+  { p_email: emailLower },
+);
+
+if (adminErr) {
+  setStatus(`❌ Admin check failed: ${adminErr.message}`);
+  return;
+}
+
+if (!isAdmin) {
   const { data: invited, error: inviteErr } = await supabase.rpc(
     "is_email_invited",
     { p_email: emailLower },

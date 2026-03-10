@@ -26,22 +26,25 @@ export default function AdminTestManagePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [currentTest, setCurrentTest] = useState<TestRow | null>(null);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sortOrderByQid, setSortOrderByQid] = useState<Record<string, number>>({});
+  const [sortOrderByQid, setSortOrderByQid] = useState<Record<string, number>>(
+    {},
+  );
 
   const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
   const includedQuestions = useMemo(() => {
-  const arr = questions.filter((q) => selectedIds.has(q.id));
-  arr.sort((a, b) => {
-    const ao = sortOrderByQid[a.id] ?? a.question_number ?? 0;
-    const bo = sortOrderByQid[b.id] ?? b.question_number ?? 0;
-    return ao - bo;
-  });
-  return arr;
-}, [questions, selectedIds, sortOrderByQid]);
+    const arr = questions.filter((q) => selectedIds.has(q.id));
+    arr.sort((a, b) => {
+      const ao = sortOrderByQid[a.id] ?? a.question_number ?? 0;
+      const bo = sortOrderByQid[b.id] ?? b.question_number ?? 0;
+      return ao - bo;
+    });
+    return arr;
+  }, [questions, selectedIds, sortOrderByQid]);
 
   async function loadAll() {
     if (!sb) return;
@@ -94,10 +97,10 @@ export default function AdminTestManagePage() {
 
     // current selections
     const { data: tqData, error: tqErr } = await sb
-  .from("test_questions")
-  .select("question_id, sort_order")
-  .eq("test_id", testId)
-  .order("sort_order", { ascending: true });
+      .from("test_questions")
+      .select("question_id, sort_order")
+      .eq("test_id", testId)
+      .order("sort_order", { ascending: true });
 
     if (tqErr) {
       setStatus(`Could not load test questions: ${tqErr.message}`);
@@ -110,12 +113,12 @@ export default function AdminTestManagePage() {
     );
     setSelectedIds(set);
     const orderMap: Record<string, number> = {};
-for (const r of tqData ?? []) {
-  const qid = String((r as any)?.question_id ?? "");
-  const so = Number((r as any)?.sort_order ?? 0);
-  if (qid) orderMap[qid] = so;
-}
-setSortOrderByQid(orderMap);
+    for (const r of tqData ?? []) {
+      const qid = String((r as any)?.question_id ?? "");
+      const so = Number((r as any)?.sort_order ?? 0);
+      if (qid) orderMap[qid] = so;
+    }
+    setSortOrderByQid(orderMap);
 
     setStatus("");
   }
@@ -147,11 +150,25 @@ setSortOrderByQid(orderMap);
       const emailLower = (session.user.email ?? "").toLowerCase().trim();
       setAdminEmail(emailLower);
 
-      if (emailLower !== "riegardts@gmail.com") {
+      const { data: adminOk, error: adminErr } = await sb.rpc(
+        "is_current_user_admin",
+      );
+
+      if (adminErr) {
+        setIsAdmin(false);
+        setStatus(`Admin check failed: ${adminErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!adminOk) {
+        setIsAdmin(false);
         setStatus("Not authorized: admin only.");
         setLoading(false);
         return;
       }
+
+      setIsAdmin(true);
 
       await loadAll();
       setLoading(false);
@@ -174,15 +191,18 @@ setSortOrderByQid(orderMap);
     setStatus("Saving…");
 
     if (checked) {
-      // add with sort_order = question_number (simple MVP)
-      const q = questions.find((x) => x.id === qid);
-      const sortOrder = q?.question_number ?? 1;
+      const nextSortOrder =
+        includedQuestions.length > 0
+          ? Math.max(
+              ...includedQuestions.map((q) => sortOrderByQid[q.id] ?? 0),
+            ) + 1
+          : 1;
 
       const { error } = await sb.from("test_questions").upsert(
         {
           test_id: currentTest.id,
           question_id: qid,
-          sort_order: sortOrder,
+          sort_order: nextSortOrder,
         },
         { onConflict: "test_id,question_id" },
       );
@@ -216,61 +236,61 @@ setSortOrderByQid(orderMap);
   }
 
   async function moveQuestion(qid: string, direction: "up" | "down") {
-  if (!sb) return;
-  if (!currentTest) return;
+    if (!sb) return;
+    if (!currentTest) return;
 
-  if (currentTest.is_finalized) {
-    setStatus("❌ This test is finalized. You can’t reorder questions.");
-    return;
+    if (currentTest.is_finalized) {
+      setStatus("❌ This test is finalized. You can’t reorder questions.");
+      return;
+    }
+
+    const list = includedQuestions;
+    const idx = list.findIndex((q) => q.id === qid);
+    if (idx === -1) return;
+
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= list.length) return;
+
+    const a = list[idx];
+    const b = list[swapIdx];
+
+    const aOrder = sortOrderByQid[a.id] ?? a.question_number ?? 0;
+    const bOrder = sortOrderByQid[b.id] ?? b.question_number ?? 0;
+
+    setStatus("Reordering…");
+
+    // swap the two sort_order values
+    const { error: err1 } = await sb
+      .from("test_questions")
+      .update({ sort_order: bOrder })
+      .eq("test_id", currentTest.id)
+      .eq("question_id", a.id);
+
+    if (err1) {
+      setStatus(`❌ Could not reorder: ${err1.message}`);
+      return;
+    }
+
+    const { error: err2 } = await sb
+      .from("test_questions")
+      .update({ sort_order: aOrder })
+      .eq("test_id", currentTest.id)
+      .eq("question_id", b.id);
+
+    if (err2) {
+      setStatus(`❌ Could not reorder: ${err2.message}`);
+      return;
+    }
+
+    // update local map
+    setSortOrderByQid((prev) => ({
+      ...prev,
+      [a.id]: bOrder,
+      [b.id]: aOrder,
+    }));
+
+    setStatus("✅ Reordered");
   }
-
-  const list = includedQuestions;
-  const idx = list.findIndex((q) => q.id === qid);
-  if (idx === -1) return;
-
-  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= list.length) return;
-
-  const a = list[idx];
-  const b = list[swapIdx];
-
-  const aOrder = sortOrderByQid[a.id] ?? a.question_number ?? 0;
-  const bOrder = sortOrderByQid[b.id] ?? b.question_number ?? 0;
-
-  setStatus("Reordering…");
-
-  // swap the two sort_order values
-  const { error: err1 } = await sb
-    .from("test_questions")
-    .update({ sort_order: bOrder })
-    .eq("test_id", currentTest.id)
-    .eq("question_id", a.id);
-
-  if (err1) {
-    setStatus(`❌ Could not reorder: ${err1.message}`);
-    return;
-  }
-
-  const { error: err2 } = await sb
-    .from("test_questions")
-    .update({ sort_order: aOrder })
-    .eq("test_id", currentTest.id)
-    .eq("question_id", b.id);
-
-  if (err2) {
-    setStatus(`❌ Could not reorder: ${err2.message}`);
-    return;
-  }
-
-  // update local map
-  setSortOrderByQid((prev) => ({
-    ...prev,
-    [a.id]: bOrder,
-    [b.id]: aOrder,
-  }));
-
-  setStatus("✅ Reordered");
-}
   function snippet(s: string, max = 120) {
     const t = (s || "").replace(/\s+/g, " ").trim();
     return t.length > max ? t.slice(0, max - 1) + "…" : t;
@@ -325,7 +345,7 @@ setSortOrderByQid(orderMap);
 
       {loading ? (
         <p style={{ marginTop: 18 }}>Loading…</p>
-      ) : adminEmail !== "riegardts@gmail.com" ? (
+      ) : !isAdmin ? (
         <p style={{ marginTop: 18, color: "#fca5a5" }}>
           {status || "Admin only."}
         </p>
@@ -352,84 +372,102 @@ setSortOrderByQid(orderMap);
               Included questions: {selectedCount}
             </div>
             <div style={{ marginTop: 10 }}>
-  <div style={{ fontWeight: 900, marginBottom: 8 }}>Included questions (ordered)</div>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                Included questions (ordered)
+              </div>
 
-  {includedQuestions.length === 0 ? (
-    <div style={{ fontSize: 13, opacity: 0.85 }}>
-      No questions included yet. Tick checkboxes below to add them.
-    </div>
-  ) : (
-    <div style={{ display: "grid", gap: 8 }}>
-      {includedQuestions.map((q, i) => (
-        <div
-          key={q.id}
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            background: "#ffffff",
-            color: "#111827",
-            border: "1px solid #23324a",
-            borderRadius: 12,
-            padding: 10,
-          }}
-          title={q.prompt || q.title}
-        >
-          <div style={{ width: 22, textAlign: "right", fontWeight: 900 }}>
-            {i + 1}.
-          </div>
+              {includedQuestions.length === 0 ? (
+                <div style={{ fontSize: 13, opacity: 0.85 }}>
+                  No questions included yet. Tick checkboxes below to add them.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {includedQuestions.map((q, i) => (
+                    <div
+                      key={q.id}
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "center",
+                        background: "#ffffff",
+                        color: "#111827",
+                        border: "1px solid #23324a",
+                        borderRadius: 12,
+                        padding: 10,
+                      }}
+                      title={q.prompt || q.title}
+                    >
+                      <div
+                        style={{
+                          width: 22,
+                          textAlign: "right",
+                          fontWeight: 900,
+                        }}
+                      >
+                        {i + 1}.
+                      </div>
 
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 900 }}>
-              Q{q.question_number}: {q.title}{" "}
-              <span style={{ opacity: 0.7 }}>[{q.marks}]</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 900 }}>
+                          Question {i + 1}: {q.title}{" "}
+                          <span style={{ opacity: 0.7 }}>[{q.marks}]</span>
+                        </div>
+                        <div
+                          style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}
+                        >
+                          {snippet(q.prompt || q.title, 90)}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => moveQuestion(q.id, "up")}
+                          disabled={i === 0 || currentTest.is_finalized}
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #333",
+                            cursor:
+                              i === 0 || currentTest.is_finalized
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              i === 0 || currentTest.is_finalized ? 0.5 : 1,
+                          }}
+                        >
+                          ↑
+                        </button>
+
+                        <button
+                          onClick={() => moveQuestion(q.id, "down")}
+                          disabled={
+                            i === includedQuestions.length - 1 ||
+                            currentTest.is_finalized
+                          }
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #333",
+                            cursor:
+                              i === includedQuestions.length - 1 ||
+                              currentTest.is_finalized
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              i === includedQuestions.length - 1 ||
+                              currentTest.is_finalized
+                                ? 0.5
+                                : 1,
+                          }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-              {snippet(q.prompt || q.title, 90)}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              onClick={() => moveQuestion(q.id, "up")}
-              disabled={i === 0 || currentTest.is_finalized}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                cursor:
-                  i === 0 || currentTest.is_finalized ? "not-allowed" : "pointer",
-                opacity: i === 0 || currentTest.is_finalized ? 0.5 : 1,
-              }}
-            >
-              ↑
-            </button>
-
-            <button
-              onClick={() => moveQuestion(q.id, "down")}
-              disabled={i === includedQuestions.length - 1 || currentTest.is_finalized}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                cursor:
-                  i === includedQuestions.length - 1 || currentTest.is_finalized
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  i === includedQuestions.length - 1 || currentTest.is_finalized
-                    ? 0.5
-                    : 1,
-              }}
-            >
-              ↓
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
             <div style={{ fontSize: 13, opacity: 0.85 }}>{status}</div>
           </div>
 
