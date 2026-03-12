@@ -113,6 +113,15 @@ export default function QuestionPage() {
   >({});
 
   const [draft, setDraft] = useState("");
+  useEffect(() => {
+  const timer = setTimeout(() => {
+    if (draft && draft !== lastSavedDraft) {
+      saveDraft();
+    }
+  }, 1500);
+
+  return () => clearTimeout(timer);
+}, [draft]);
   const [partAnswers, setPartAnswers] = useState<Record<string, string>>({});
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
