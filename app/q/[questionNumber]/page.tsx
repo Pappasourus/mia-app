@@ -654,6 +654,7 @@ export default function QuestionPage() {
     setStatusText("✅ Submitted");
 
     if (opts?.goHomeAfter) {
+      window.localStorage.removeItem("mia_last_question_number");
       router.push("/");
     }
 
