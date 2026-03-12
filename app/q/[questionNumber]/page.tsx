@@ -73,7 +73,18 @@ export default function QuestionPage() {
       );
     }
   }, [questionNumber]);
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
 
+    window.addEventListener("beforeunload", handler);
+
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string>("");
 
@@ -114,14 +125,14 @@ export default function QuestionPage() {
 
   const [draft, setDraft] = useState("");
   useEffect(() => {
-  const timer = setTimeout(() => {
-    if (draft && draft !== lastSavedDraft) {
-      saveDraft();
-    }
-  }, 1500);
+    const timer = setTimeout(() => {
+      if (draft && draft !== lastSavedDraft) {
+        saveDraft();
+      }
+    }, 1500);
 
-  return () => clearTimeout(timer);
-}, [draft]);
+    return () => clearTimeout(timer);
+  }, [draft]);
   const [partAnswers, setPartAnswers] = useState<Record<string, string>>({});
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
