@@ -1421,7 +1421,12 @@ export default function QuestionPage() {
                 return (
                   <button
                     key={n}
-                    onClick={() => router.push(`/q/${n}`)}
+                                        onClick={async () => {
+                      if (!isSubmitted && !isFinalized && draft.trim().length > 0) {
+                        await saveDraft();
+                      }
+                      router.push(`/q/${n}`);
+                    }}
                     style={{
                       position: "relative",
                       width: 28,
