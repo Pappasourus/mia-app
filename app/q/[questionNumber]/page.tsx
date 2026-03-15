@@ -124,15 +124,7 @@ export default function QuestionPage() {
   >({});
 
   const [draft, setDraft] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (draft && draft !== lastSavedDraft) {
-        saveDraft();
-      }
-    }, 1500);
 
-    return () => clearTimeout(timer);
-  }, [draft]);
   const [partAnswers, setPartAnswers] = useState<Record<string, string>>({});
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
@@ -676,41 +668,6 @@ export default function QuestionPage() {
     if (!confirmed) return;
     await submitFinal({ goHomeAfter: true });
   }
-
-  // ===== ANCHOR: question-page-auto-save-draft =====
-  useEffect(() => {
-    if (loading) return;
-    if (!question) return;
-    if (!userId) return;
-    if (isSubmitted) return;
-
-    if (!hasTypedContent) {
-      setStatusByQuestionId((prev) => ({
-        ...prev,
-        [question.id]: "not_started",
-      }));
-      return;
-    }
-
-    if (draft === lastSavedDraftRef.current) return;
-
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-
-    autoSaveTimerRef.current = setTimeout(async () => {
-      if (isAutoSavingRef.current) return;
-      isAutoSavingRef.current = true;
-      await saveDraft({ silent: true });
-      isAutoSavingRef.current = false;
-    }, 1200);
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, [draft, loading, question, userId, isSubmitted, hasTypedContent]);
 
   // ===== ANCHOR: question-page-status-preview-sync =====
   useEffect(() => {
