@@ -146,7 +146,7 @@ export default function AdminHomePage() {
 
             <button
               onClick={toggleTestLock}
-              disabled={isFinalized === true}
+                            disabled={isFinalized === null || !currentTestId}
               className="text-sm rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900 disabled:opacity-50"
             >
               {isFinalized ? "Unlock Test" : "Lock Test"}
