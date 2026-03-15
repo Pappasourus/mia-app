@@ -74,25 +74,30 @@ export default function AdminHomePage() {
 
     check();
   }, [router]);
-  async function finalizeTest() {
-    if (!supabase) return;
-
-    const ok = window.confirm(
-      "Finalize the test? This will lock students out and submit any drafts.",
-    );
-    if (!ok) return;
-
-    setFinalizeMsg("Finalizing…");
-
-    const { error } = await supabase.rpc("finalize_test");
-    if (error) {
-      setFinalizeMsg(`❌ Finalize failed: ${error.message}`);
-      return;
-    }
-
-    setFinalizeMsg("✅ Test finalized.");
-    setIsFinalized(true);
+  async function toggleTestLock() {
+  if (!currentTestId) {
+    setStatusMsg("❌ No current test selected.");
+    return;
   }
+
+  const newState = !isFinalized;
+
+  const { error } = await supabase
+    .from("tests")
+    .update({
+      is_finalized: newState,
+      finalized_at: newState ? new Date().toISOString() : null,
+    })
+    .eq("id", currentTestId);
+
+  if (error) {
+    setStatusMsg(`❌ Could not update test: ${error.message}`);
+    return;
+  }
+
+  setIsFinalized(newState);
+  setStatusMsg(newState ? "✅ Test locked." : "✅ Test unlocked.");
+}
   const items = [
     { href: "/admin/questions", label: "Question Builder" },
     { href: "/admin/media", label: "Media" },
@@ -134,7 +139,7 @@ export default function AdminHomePage() {
             </div>
 
             <button
-              onClick={finalizeTest}
+              onClick={toggleTestLock}
               disabled={isFinalized === true}
               className="text-sm rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900 disabled:opacity-50"
             >
