@@ -77,6 +77,10 @@ export default function AdminHomePage() {
     check();
   }, [router]);
   async function toggleTestLock() {
+      if (!supabase) {
+    setFinalizeMsg("❌ Supabase not configured.");
+    return;
+  }
     if (!currentTestId) {
       setFinalizeMsg("❌ No current test selected.");
       return;
