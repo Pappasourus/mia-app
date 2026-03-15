@@ -213,6 +213,10 @@ export default function AdminTestManagePage() {
       }
 
       setSelectedIds((prev) => new Set(prev).add(qid));
+      setSortOrderByQid((prev) => ({
+        ...prev,
+        [qid]: nextSortOrder,
+      }));
       setStatus("✅ Updated");
     } else {
       const { error } = await sb
