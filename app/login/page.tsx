@@ -62,6 +62,8 @@ export default function LoginPage() {
       return;
     }
 
+    let role: "admin" | "student" = isAdmin ? "admin" : "student";
+
     if (!isAdmin) {
       // Students: must be invited
       const { data: invite, error: inviteErr } = await supabase
@@ -85,6 +87,23 @@ export default function LoginPage() {
       }
     }
 
+    const signedInUser = data?.user;
+    if (signedInUser) {
+      const { error: profileErr } = await supabase.from("profiles").upsert(
+        {
+          user_id: signedInUser.id,
+          email: emailLower,
+          role,
+        },
+        { onConflict: "user_id" },
+      );
+
+      if (profileErr) {
+        setStatus(`❌ Could not prepare profile: ${profileErr.message}`);
+        return;
+      }
+    }
+
     // Respect ?next= if provided, otherwise route by email rule
     const rawNext = new URLSearchParams(window.location.search).get("next");
     let next = rawNext && rawNext.trim() ? rawNext : "";
@@ -96,11 +115,11 @@ export default function LoginPage() {
     setStatus(`✅ Signed in! Redirecting to ${next}...`);
     const lastQ = window.localStorage.getItem("mia_last_question_number");
 
-if (lastQ) {
-  router.push(`/q/${lastQ}`);
-} else {
-  router.push(next || "/");
-}
+    if (lastQ) {
+      router.push(`/q/${lastQ}`);
+    } else {
+      router.push(next || "/");
+    }
     router.refresh();
   }
 
