@@ -11,6 +11,7 @@ export default function AdminHomePage() {
   const [status, setStatus] = useState("Checking admin access…");
   const [isFinalized, setIsFinalized] = useState<boolean | null>(null);
   const [finalizeMsg, setFinalizeMsg] = useState<string>("");
+  const [currentTestId, setCurrentTestId] = useState<string>("");
   const [currentTestName, setCurrentTestName] = useState<string>("");
   const [canManageAdmins, setCanManageAdmins] = useState(false);
 
@@ -56,6 +57,7 @@ export default function AdminHomePage() {
         .maybeSingle();
 
       const testId = String((settings as any)?.current_test_id ?? "");
+      setCurrentTestId(testId);
 
       if (!testId) {
         setCurrentTestName("");
@@ -75,29 +77,29 @@ export default function AdminHomePage() {
     check();
   }, [router]);
   async function toggleTestLock() {
-  if (!currentTestId) {
-    setStatusMsg("❌ No current test selected.");
-    return;
+    if (!currentTestId) {
+      setFinalizeMsg("❌ No current test selected.");
+      return;
+    }
+
+    const newState = !isFinalized;
+
+    const { error } = await supabase
+      .from("tests")
+      .update({
+        is_finalized: newState,
+        finalized_at: newState ? new Date().toISOString() : null,
+      })
+      .eq("id", currentTestId);
+
+    if (error) {
+      setFinalizeMsg(`❌ Could not update test: ${error.message}`);
+      return;
+    }
+
+    setIsFinalized(newState);
+    setFinalizeMsg(newState ? "✅ Test locked." : "✅ Test unlocked.");
   }
-
-  const newState = !isFinalized;
-
-  const { error } = await supabase
-    .from("tests")
-    .update({
-      is_finalized: newState,
-      finalized_at: newState ? new Date().toISOString() : null,
-    })
-    .eq("id", currentTestId);
-
-  if (error) {
-    setStatusMsg(`❌ Could not update test: ${error.message}`);
-    return;
-  }
-
-  setIsFinalized(newState);
-  setStatusMsg(newState ? "✅ Test locked." : "✅ Test unlocked.");
-}
   const items = [
     { href: "/admin/questions", label: "Question Builder" },
     { href: "/admin/media", label: "Media" },
