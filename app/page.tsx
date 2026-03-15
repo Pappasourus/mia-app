@@ -16,7 +16,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 gap-3">
             <Link
-              href="/login?next=/q/1"
+              href="/q/1"
               className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-4 hover:bg-slate-900"
             >
               <div className="text-lg font-semibold">Student</div>
@@ -26,7 +26,7 @@ export default function HomePage() {
             </Link>
 
             <Link
-              href="/login?next=/admin"
+              href="/admin"
               className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-4 hover:bg-slate-900"
             >
               <div className="text-lg font-semibold">Admin</div>
@@ -38,12 +38,15 @@ export default function HomePage() {
 
           <div className="pt-2 text-xs text-slate-400">
             Need to sign in?{" "}
-            <Link href="/login?next=/" className="underline hover:text-slate-200">
+            <Link
+              href="/login?next=/"
+              className="underline hover:text-slate-200"
+            >
               Go to Login
             </Link>
           </div>
         </div>
-                {process.env.NODE_ENV === "development" ? (
+        {process.env.NODE_ENV === "development" ? (
           <div className="rounded-lg border border-amber-700/40 bg-amber-900/10 p-4 space-y-3">
             <div className="text-sm font-semibold text-amber-200">
               Dev Quick Links (localhost only)
