@@ -28,7 +28,9 @@ export default function AdminHomePage() {
         router.replace("/login?next=/admin");
         return;
       }
-            setCanManageAdmins((user.email ?? "").toLowerCase() === "riegardts@gmail.com");
+      setCanManageAdmins(
+        (user.email ?? "").toLowerCase() === "riegardts@gmail.com",
+      );
 
       // Admin check via allowlist table (RPC)
       const { data: isAdmin, error: adminErr } = await supabase.rpc(
@@ -91,15 +93,13 @@ export default function AdminHomePage() {
     setFinalizeMsg("✅ Test finalized.");
     setIsFinalized(true);
   }
-      const items = [
+  const items = [
     { href: "/admin/questions", label: "Question Builder" },
     { href: "/admin/media", label: "Media" },
     { href: "/admin/tests", label: "Test Builder" },
     { href: "/admin/answers", label: "Answers" },
     { href: "/admin/students", label: "Students" },
-    ...(canManageAdmins
-      ? [{ href: "/admin/admins", label: "Admins" }]
-      : []),
+    ...(canManageAdmins ? [{ href: "/admin/admins", label: "Admins" }] : []),
   ];
 
   return (
@@ -138,7 +138,7 @@ export default function AdminHomePage() {
               disabled={isFinalized === true}
               className="text-sm rounded-md border border-slate-700 px-3 py-2 hover:bg-slate-900 disabled:opacity-50"
             >
-              Finalize Test
+              {isFinalized ? "Unlock Test" : "Lock Test"}
             </button>
           </div>
 
