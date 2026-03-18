@@ -427,23 +427,29 @@ export default function AdminAnswersPage() {
 
     let y = margin;
 
-    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
     doc.text("Student Answers", margin, y);
-    y += 22;
+    y += 28;
 
-    doc.setFontSize(11);
-    doc.text(
-      `Student: ${selectedStudentEmail || selectedStudentId}`,
-      margin,
-      y,
-    );
-    y += 16;
-
-    doc.setFontSize(10);
-    doc.text(`Exported: ${new Date().toLocaleString()}`, margin, y);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Student:", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${selectedStudentEmail || selectedStudentId}`, margin + 52, y);
     y += 18;
 
-    const lineGap = 12;
+    doc.setFont("helvetica", "bold");
+    doc.text("Exported:", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${new Date().toLocaleString()}`, margin + 58, y);
+    y += 24;
+
+    doc.setDrawColor(180);
+    doc.line(margin, y, pageW - margin, y);
+    y += 20;
+
+    const lineGap = 14;
     // Load all sub-questions for the current test’s questions (once per export)
     const qids = questions.map((q) => q.id);
     const { data: partsRows } = await sb!
@@ -485,9 +491,10 @@ export default function AdminAnswersPage() {
           y = margin;
         }
 
-        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(15);
         doc.text(`Section ${sec}`, margin, y);
-        y += 18;
+        y += 22;
       }
       const a = answerByQid.get(q.id);
       const st = a?.status ?? "not_started";
@@ -500,17 +507,21 @@ export default function AdminAnswersPage() {
         y = margin;
       }
 
-      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
       doc.text(
         `Q${q.question_number}: ${q.title || ""} [${q.marks}]`,
         margin,
         y,
       );
-      y += 14;
+      y += 18;
 
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
-      doc.text(`Status: ${labelStatus(st)}`, margin, y);
-      y += 14;
+      doc.text("Status:", margin, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${labelStatus(st)}`, margin + 38, y);
+      y += 18;
 
       const asParts = tryParsePartJson(answerText);
 
@@ -526,9 +537,10 @@ export default function AdminAnswersPage() {
             y = margin;
           }
 
+          doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
           doc.text(`Q${q.question_number}${label} [${pm}]`, margin, y);
-          y += 14;
+          y += 16;
 
           const body = String(asParts[label] ?? "").trim() || "(empty)";
           const lines = doc.splitTextToSize(body, maxW);
@@ -543,7 +555,7 @@ export default function AdminAnswersPage() {
             y += lineGap;
           }
 
-          y += 10;
+          y += 16;
         }
       } else {
         // Normal single-answer question
@@ -560,7 +572,7 @@ export default function AdminAnswersPage() {
           y += lineGap;
         }
 
-        y += 10; // extra space between questions
+        y += 18; // extra space between questions
       }
     }
 
