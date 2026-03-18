@@ -874,7 +874,9 @@ export default function QuestionPage() {
               </p>
 
               <button
-                onClick={() => setHasStarted(true)}
+                onClick={() => {
+                  if (!isFinalized) setHasStarted(true);
+                }}
                 disabled={isFinalized}
                 style={{
                   marginTop: 18,
