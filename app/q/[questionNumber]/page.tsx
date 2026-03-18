@@ -129,6 +129,7 @@ export default function QuestionPage() {
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
   const [currentTestId, setCurrentTestId] = useState<string>("");
+  const [hasStarted, setHasStarted] = useState(false);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
@@ -855,6 +856,50 @@ export default function QuestionPage() {
             <p style={{ marginTop: 18, color: "crimson", fontSize: 13 }}>
               {errorMsg}
             </p>
+          ) : !hasStarted ? (
+            <div
+              style={{
+                maxWidth: 760,
+                marginTop: 24,
+                padding: 24,
+                background: "#efefef",
+                border: "1px solid #d4d4d4",
+              }}
+            >
+              <h2 style={{ margin: 0, fontSize: 24, color: "#111" }}>
+                Waiting to start
+              </h2>
+              <p style={{ marginTop: 12, fontSize: 16, color: "#333" }}>
+                Please wait for your teacher to unlock the test.
+              </p>
+
+              <button
+                onClick={() => setHasStarted(true)}
+                disabled={isFinalized}
+                style={{
+                  marginTop: 18,
+                  padding: "12px 18px",
+                  border: "1px solid #8ab63f",
+                  background: isFinalized ? "#a7bf82" : "#7fb43d",
+                  color: "#fff",
+                  fontSize: 16,
+                  cursor: isFinalized ? "not-allowed" : "pointer",
+                  opacity: isFinalized ? 0.8 : 1,
+                }}
+              >
+                Start Test
+              </button>
+
+              {isFinalized ? (
+                <p style={{ marginTop: 12, fontSize: 13, color: "#7f1d1d" }}>
+                  The test is currently locked.
+                </p>
+              ) : (
+                <p style={{ marginTop: 12, fontSize: 13, color: "#166534" }}>
+                  The test is unlocked and ready to begin.
+                </p>
+              )}
+            </div>
           ) : question ? (
             <>
               <div
@@ -1421,7 +1466,7 @@ export default function QuestionPage() {
                 return (
                   <button
                     key={n}
-                                        onClick={async () => {
+                    onClick={async () => {
                       if (
                         !isSubmitted &&
                         !isFinalized &&
