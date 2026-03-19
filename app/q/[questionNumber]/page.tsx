@@ -131,6 +131,13 @@ export default function QuestionPage() {
   const [currentTestId, setCurrentTestId] = useState<string>("");
   const [hasStarted, setHasStarted] = useState(false);
 
+  useEffect(() => {
+    const started = window.sessionStorage.getItem("mia_test_started");
+    if (started === "true") {
+      setHasStarted(true);
+    }
+  }, []);
+
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
   const [lastSavedDraft, setLastSavedDraft] = useState<string>("");
@@ -648,6 +655,7 @@ export default function QuestionPage() {
 
     if (opts?.goHomeAfter) {
       window.localStorage.removeItem("mia_last_question_number");
+      window.sessionStorage.removeItem("mia_test_started");
       router.push("/");
     }
 
@@ -875,7 +883,10 @@ export default function QuestionPage() {
 
               <button
                 onClick={() => {
-                  if (!isFinalized) setHasStarted(true);
+                  if (!isFinalized) {
+                    window.sessionStorage.setItem("mia_test_started", "true");
+                    setHasStarted(true);
+                  }
                 }}
                 disabled={isFinalized}
                 style={{
