@@ -60,7 +60,12 @@ function allPartsAnswered(answerText: string, partLabels: string[]): boolean {
 function serializePartAnswers(obj: Record<string, string>) {
   return JSON.stringify(obj ?? {});
 }
-
+function persistSavedQuestionIds(ids: Set<string>) {
+  window.sessionStorage.setItem(
+    "mia_saved_question_ids",
+    JSON.stringify(Array.from(ids)),
+  );
+}
 export default function QuestionPage() {
   const router = useRouter();
   const params = useParams<{ questionNumber: string }>();
@@ -73,6 +78,17 @@ export default function QuestionPage() {
       );
     }
   }, [questionNumber]);
+    useEffect(() => {
+    const raw = window.sessionStorage.getItem("mia_saved_question_ids");
+    if (!raw) return;
+
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        setSavedQuestionIds(new Set(arr.map(String)));
+      }
+    } catch {}
+  }, []);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -129,6 +145,9 @@ export default function QuestionPage() {
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
   const [currentTestId, setCurrentTestId] = useState<string>("");
+    const [savedQuestionIds, setSavedQuestionIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [hasStarted, setHasStarted] = useState(false);
 
   useEffect(() => {
@@ -1351,9 +1370,17 @@ export default function QuestionPage() {
                   </div>
 
                   <button
-                    onClick={async () => {
-                      const ok = await submitFinal();
-                      if (!ok) return;
+                                        onClick={async () => {
+                      const ok = await saveDraft();
+                      if (!ok || !question) return;
+
+                      setSavedQuestionIds((prev) => {
+                        const next = new Set(prev);
+                        next.add(question.id);
+                        persistSavedQuestionIds(next);
+                        return next;
+                      });
+
                       if (nextNum) router.push(`/q/${nextNum}`);
                     }}
                     disabled={
@@ -1467,7 +1494,10 @@ export default function QuestionPage() {
                   ? allPartsAnswered(savedText, partLabels)
                   : true;
 
-                const isSubmittedTile = st === "submitted" && partsComplete;
+                                const isSubmittedTile =
+                  ((st === "submitted") ||
+                    (qidForN ? savedQuestionIds.has(qidForN) : false)) &&
+                  partsComplete;
                 const isCurrentTile = isCurrent;
                 const isDraftLike =
                   st === "draft" || (st === "submitted" && !partsComplete);
