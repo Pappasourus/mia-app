@@ -220,6 +220,7 @@ export default function AdminAnswersPage() {
   }, [sb, isAdmin, selectedStudentId, selectedTestId]);
 
   // ===== ANCHOR: admin-answers-load-questions-for-selected-test =====
+  // ===== ANCHOR: admin-answers-load-questions-for-selected-test =====
   useEffect(() => {
     if (!sb) return;
     if (!isAdmin) return;
@@ -232,32 +233,56 @@ export default function AdminAnswersPage() {
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await sb
+      const { data: tqRows, error: tqErr } = await sb
         .from("test_questions")
-        .select(
-          "sort_order, questions(id, question_number, title, marks, prompt, section)",
-        )
+        .select("question_id, sort_order")
         .eq("test_id", selectedTestId)
         .order("sort_order", { ascending: true });
 
       if (cancelled) return;
 
-      if (error) {
-        setStatusMsg(`Could not load test questions: ${error.message}`);
+      if (tqErr) {
+        setStatusMsg(`Could not load test question links: ${tqErr.message}`);
         setQuestions([]);
         return;
       }
 
-      const rows = (data ?? []) as any[];
+      const links = (tqRows ?? []) as any[];
+      const qids = links
+        .map((r: any) => String(r?.question_id ?? ""))
+        .filter(Boolean);
 
-      const mapped: QuestionRow[] = rows
-        .map((r: any) => {
-          const q = Array.isArray(r?.questions) ? r.questions[0] : r?.questions;
+      if (qids.length === 0) {
+        setQuestions([]);
+        return;
+      }
+
+      const { data: qRows, error: qErr } = await sb
+        .from("questions")
+        .select("id, question_number, title, marks, prompt, section")
+        .in("id", qids);
+
+      if (cancelled) return;
+
+      if (qErr) {
+        setStatusMsg(`Could not load test questions: ${qErr.message}`);
+        setQuestions([]);
+        return;
+      }
+
+      const qById = new Map<string, any>();
+      for (const q of qRows ?? []) {
+        qById.set(String((q as any)?.id ?? ""), q);
+      }
+
+      const mapped: QuestionRow[] = links
+        .map((link: any) => {
+          const q = qById.get(String(link?.question_id ?? ""));
           if (!q?.id) return null;
 
           return {
             id: String(q.id),
-            question_number: Number(r?.sort_order ?? q.question_number ?? 0),
+            question_number: Number(link?.sort_order ?? q.question_number ?? 0),
             title: String(q.title ?? ""),
             marks: Number(q.marks ?? 0),
             prompt: String(q.prompt ?? ""),
