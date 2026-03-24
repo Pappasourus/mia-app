@@ -368,14 +368,16 @@ export default function QuestionPage() {
           }
           setQuestionsIdByNumber(map);
 
+          // ===== ANCHOR: question-page-build-section-map =====
           const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
           for (const r of tqData ?? []) {
             const n = Number((r as any)?.sort_order);
+            const qRel = (r as any)?.questions;
+
             const secRaw = String(
-              ((r as any)?.questions?.section ??
-                Array.isArray((r as any)?.questions))
-                ? ((r as any)?.questions?.[0]?.section ?? "")
-                : "",
+              Array.isArray(qRel)
+                ? (qRel[0]?.section ?? "")
+                : (qRel?.section ?? ""),
             ).trim();
 
             const sec =
