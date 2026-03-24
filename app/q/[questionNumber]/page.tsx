@@ -1535,9 +1535,9 @@ export default function QuestionPage() {
 
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 28px)",
-                gap: 4,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
                 marginBottom: 12,
               }}
             >
