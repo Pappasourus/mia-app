@@ -1076,7 +1076,7 @@ export default function QuestionPage() {
                     width: "min(780px, 100%)",
                     marginBottom: 14,
                     padding: 10,
-                    border: "1px dashed #b8b8b8",
+                    border: "1px solid #b8b8b8",
                     background: "#ececec",
                     fontSize: 12,
                     color: "#555",
