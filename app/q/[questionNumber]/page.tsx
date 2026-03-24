@@ -390,10 +390,16 @@ export default function QuestionPage() {
               const qid = String((q as any)?.id ?? "");
               const secRaw = String((q as any)?.section ?? "").trim();
 
-              sectionByQuestionId[qid] =
-                secRaw === "A" || secRaw === "B" || secRaw === "C"
-                  ? secRaw
-                  : "Other";
+              // ===== ANCHOR: normalize-section-values =====
+              const secUpper = secRaw.toUpperCase();
+
+              let sec: "A" | "B" | "C" | "Other" = "Other";
+
+              if (secUpper.includes("A")) sec = "A";
+              else if (secUpper.includes("B")) sec = "B";
+              else if (secUpper.includes("C")) sec = "C";
+
+              sectionByQuestionId[qid] = sec;
             }
           }
 
