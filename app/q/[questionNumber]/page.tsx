@@ -465,55 +465,57 @@ export default function QuestionPage() {
 
       // ===== ANCHOR: question-page-fallback-build-sections =====
       // ===== ANCHOR: question-page-fallback-sequential-by-section =====
-// Fallback: if no current test (or missing mapping), use student-facing
-// sequential numbering by section order: A, B, C, Other
-if (!qidForThisPage) {
-  const { data: qIndex, error: qIndexErr } = await sb
-    .from("questions")
-    .select("id, question_number, section")
-    .order("question_number", { ascending: true });
+      // Fallback: if no current test (or missing mapping), use student-facing
+      // sequential numbering by section order: A, B, C, Other
+      if (!qidForThisPage) {
+        const { data: qIndex, error: qIndexErr } = await sb
+          .from("questions")
+          .select("id, question_number, section")
+          .order("question_number", { ascending: true });
 
-  if (!qIndexErr) {
-    const normalizeSection = (raw: any): "A" | "B" | "C" | "Other" => {
-      const secRaw = String(raw ?? "").trim().toUpperCase();
-      if (secRaw === "A" || secRaw === "SECTION A") return "A";
-      if (secRaw === "B" || secRaw === "SECTION B") return "B";
-      if (secRaw === "C" || secRaw === "SECTION C") return "C";
-      return "Other";
-    };
+        if (!qIndexErr) {
+          const normalizeSection = (raw: any): "A" | "B" | "C" | "Other" => {
+            const secRaw = String(raw ?? "")
+              .trim()
+              .toUpperCase();
+            if (secRaw === "A" || secRaw === "SECTION A") return "A";
+            if (secRaw === "B" || secRaw === "SECTION B") return "B";
+            if (secRaw === "C" || secRaw === "SECTION C") return "C";
+            return "Other";
+          };
 
-    const ordered = (qIndex ?? [])
-      .map((r: any) => ({
-        id: String(r?.id ?? ""),
-        originalNumber: Number(r?.question_number ?? 0),
-        section: normalizeSection(r?.section),
-      }))
-      .filter((r) => r.id)
-      .sort((a, b) => {
-        const sectionRank = { A: 1, B: 2, C: 3, Other: 4 };
-        const bySection = sectionRank[a.section] - sectionRank[b.section];
-        if (bySection !== 0) return bySection;
-        return a.originalNumber - b.originalNumber;
-      });
+          const ordered = (qIndex ?? [])
+            .map((r: any) => ({
+              id: String(r?.id ?? ""),
+              originalNumber: Number(r?.question_number ?? 0),
+              section: normalizeSection(r?.section),
+            }))
+            .filter((r) => r.id)
+            .sort((a, b) => {
+              const sectionRank = { A: 1, B: 2, C: 3, Other: 4 };
+              const bySection = sectionRank[a.section] - sectionRank[b.section];
+              if (bySection !== 0) return bySection;
+              return a.originalNumber - b.originalNumber;
+            });
 
-    const nums = ordered.map((_, idx) => idx + 1);
-    setAllQuestionNumbers(nums);
+          const nums = ordered.map((_, idx) => idx + 1);
+          setAllQuestionNumbers(nums);
 
-    const map: Record<number, string> = {};
-    const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
+          const map: Record<number, string> = {};
+          const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
 
-    ordered.forEach((row, idx) => {
-      const displayNumber = idx + 1;
-      map[displayNumber] = row.id;
-      sectionMap[displayNumber] = row.section;
-    });
+          ordered.forEach((row, idx) => {
+            const displayNumber = idx + 1;
+            map[displayNumber] = row.id;
+            sectionMap[displayNumber] = row.section;
+          });
 
-    setQuestionsIdByNumber(map);
-    setSectionByQuestionNumber(sectionMap);
+          setQuestionsIdByNumber(map);
+          setSectionByQuestionNumber(sectionMap);
 
-    qidForThisPage = map[questionNumber] ?? "";
-  }
-}
+          qidForThisPage = map[questionNumber] ?? "";
+        }
+      }
 
       if (!qidForThisPage) {
         setErrorMsg("Question not found in current test.");
@@ -1593,20 +1595,26 @@ if (!qidForThisPage) {
                           ? allPartsAnswered(savedText, partLabels)
                           : true;
 
-                        const isSubmittedTile =
+                        // ===== ANCHOR: question-page-tile-saved-vs-unsaved =====
+                        const isSavedTile =
                           (st === "submitted" ||
+                            st === "draft" ||
                             (qidForN
                               ? savedQuestionIds.has(qidForN)
                               : false)) &&
                           partsComplete;
+
                         const isCurrentTile = isCurrent;
-                        const isDraftLike =
-                          st === "draft" ||
-                          (st === "submitted" && !partsComplete);
+
+                        const isUnsavedTile =
+                          isCurrentTile &&
+                          !isSubmitted &&
+                          draft.trim().length > 0 &&
+                          draft !== lastSavedDraft;
 
                         let tileBg = "#6a6a6a";
                         if (isCurrentTile) tileBg = "#35c0cd";
-                        else if (isSubmittedTile) tileBg = "#79bb3b";
+                        else if (isSavedTile) tileBg = "#79bb3b";
 
                         return (
                           <button
@@ -1641,7 +1649,7 @@ if (!qidForThisPage) {
                               isCurrent ? "Current question" : `Go to Q${n}`
                             }
                           >
-                            {isDraftLike && !isCurrentTile ? (
+                            {isUnsavedTile ? (
                               <span
                                 style={{
                                   position: "absolute",
