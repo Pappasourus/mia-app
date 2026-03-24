@@ -386,6 +386,8 @@ export default function QuestionPage() {
             {};
 
           if (!questionSectionsErr) {
+            // ===== ANCHOR: question-page-debug-sections =====
+console.log("questionSectionsData", questionSectionsData);
             for (const q of questionSectionsData ?? []) {
               const qid = String((q as any)?.id ?? "");
               const secRaw = String((q as any)?.section ?? "").trim();
@@ -402,6 +404,7 @@ export default function QuestionPage() {
               sectionByQuestionId[qid] = sec;
             }
           }
+          console.log("test question ids map", map);
 
           for (const r of tqData ?? []) {
             const n = Number((r as any)?.sort_order);
