@@ -356,10 +356,10 @@ export default function QuestionPage() {
 
         // ===== ANCHOR: question-page-build-nav-and-sections =====
         // ===== ANCHOR: debug-tqdata =====
-console.log("tqData", tqData);
-console.log("tqErr", tqErr);
+        console.log("tqData", tqData);
+        console.log("tqErr", tqErr);
 
-if (!tqErr && tqData?.length) {
+        if (!tqErr && tqData?.length) {
           const nums = (tqData ?? [])
             .map((r: any) => Number(r?.sort_order))
             .filter((n) => Number.isFinite(n));
@@ -391,7 +391,7 @@ if (!tqErr && tqData?.length) {
 
           if (!questionSectionsErr) {
             // ===== ANCHOR: question-page-debug-sections =====
-console.log("questionSectionsData", questionSectionsData);
+            console.log("questionSectionsData", questionSectionsData);
             for (const q of questionSectionsData ?? []) {
               const qid = String((q as any)?.id ?? "");
               const secRaw = String((q as any)?.section ?? "").trim();
@@ -463,11 +463,12 @@ console.log("questionSectionsData", questionSectionsData);
         }
       }
 
+      // ===== ANCHOR: question-page-fallback-build-sections =====
       // Fallback: if no current test (or missing mapping), use old behavior
       if (!qidForThisPage) {
         const { data: qIndex, error: qIndexErr } = await sb
           .from("questions")
-          .select("id, question_number")
+          .select("id, question_number, section")
           .order("question_number", { ascending: true });
 
         if (!qIndexErr) {
@@ -477,12 +478,28 @@ console.log("questionSectionsData", questionSectionsData);
           setAllQuestionNumbers(nums);
 
           const map: Record<number, string> = {};
+          const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
+
           for (const r of qIndex ?? []) {
             const n = Number((r as any).question_number);
             const id = String((r as any).id ?? "");
-            if (Number.isFinite(n) && id) map[n] = id;
+            const secRaw = String((r as any).section ?? "")
+              .trim()
+              .toUpperCase();
+
+            let sec: "A" | "B" | "C" | "Other" = "Other";
+            if (secRaw === "A" || secRaw === "SECTION A") sec = "A";
+            else if (secRaw === "B" || secRaw === "SECTION B") sec = "B";
+            else if (secRaw === "C" || secRaw === "SECTION C") sec = "C";
+
+            if (Number.isFinite(n) && id) {
+              map[n] = id;
+              sectionMap[n] = sec;
+            }
           }
+
           setQuestionsIdByNumber(map);
+          setSectionByQuestionNumber(sectionMap);
 
           qidForThisPage = map[questionNumber] ?? "";
         }
