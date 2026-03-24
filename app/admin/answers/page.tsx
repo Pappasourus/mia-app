@@ -168,19 +168,7 @@ export default function AdminAnswersPage() {
       setStudents(stuRows);
       setSelectedStudentId(stuRows[0]?.user_id ?? "");
 
-      // Load questions
-      const { data: qData, error: qErr } = await sb
-        .from("questions")
-        .select("id, question_number, title, marks, prompt, section")
-        .order("question_number", { ascending: true });
-
-      if (qErr) {
-        setStatusMsg(`Could not load questions: ${qErr.message}`);
-        setLoading(false);
-        return;
-      }
-
-      setQuestions((qData ?? []) as any);
+      setQuestions([]);
       setLoading(false);
     })();
 
@@ -230,6 +218,61 @@ export default function AdminAnswersPage() {
       cancelled = true;
     };
   }, [sb, isAdmin, selectedStudentId, selectedTestId]);
+
+  // ===== ANCHOR: admin-answers-load-questions-for-selected-test =====
+  useEffect(() => {
+    if (!sb) return;
+    if (!isAdmin) return;
+
+    if (!selectedTestId) {
+      setQuestions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await sb
+        .from("test_questions")
+        .select(
+          "sort_order, questions(id, question_number, title, marks, prompt, section)",
+        )
+        .eq("test_id", selectedTestId)
+        .order("sort_order", { ascending: true });
+
+      if (cancelled) return;
+
+      if (error) {
+        setStatusMsg(`Could not load test questions: ${error.message}`);
+        setQuestions([]);
+        return;
+      }
+
+      const rows = (data ?? []) as any[];
+
+      const mapped: QuestionRow[] = rows
+        .map((r: any) => {
+          const q = Array.isArray(r?.questions) ? r.questions[0] : r?.questions;
+          if (!q?.id) return null;
+
+          return {
+            id: String(q.id),
+            question_number: Number(r?.sort_order ?? q.question_number ?? 0),
+            title: String(q.title ?? ""),
+            marks: Number(q.marks ?? 0),
+            prompt: String(q.prompt ?? ""),
+            section: String(q.section ?? ""),
+          } as QuestionRow & { section?: string };
+        })
+        .filter(Boolean) as any;
+
+      setQuestions(mapped);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sb, isAdmin, selectedTestId]);
 
   const selectedStudentEmail =
     students.find((s) => s.user_id === selectedStudentId)?.email ?? "";
