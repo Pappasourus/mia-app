@@ -1508,86 +1508,109 @@ export default function QuestionPage() {
                 marginBottom: 12,
               }}
             >
-              {(allQuestionNumbers.length
-                ? allQuestionNumbers
-                : [questionNumber]
-              ).map((n) => {
-                const isCurrent = n === questionNumber;
-                const st = getTileState(n);
-                const qidForN = questionsIdByNumber[n] ?? "";
+                            {(["A", "B", "C", "Other"] as const).map((sec) => {
+                const numsForSection = (allQuestionNumbers.length
+                  ? allQuestionNumbers
+                  : [questionNumber]
+                ).filter((n) => (sectionByQuestionNumber[n] ?? "Other") === sec);
 
-                const partLabels = qidForN
-                  ? (partLabelsByQuestionId[qidForN] ?? [])
-                  : [];
-
-                const hasParts = partLabels.length > 0;
-                const savedText = qidForN
-                  ? (answerTextByQuestionId[qidForN] ?? "")
-                  : "";
-
-                // Option A: submitted tile only when ALL parts have content
-                const partsComplete = hasParts
-                  ? allPartsAnswered(savedText, partLabels)
-                  : true;
-
-                const isSubmittedTile =
-                  (st === "submitted" ||
-                    (qidForN ? savedQuestionIds.has(qidForN) : false)) &&
-                  partsComplete;
-                const isCurrentTile = isCurrent;
-                const isDraftLike =
-                  st === "draft" || (st === "submitted" && !partsComplete);
-
-                let tileBg = "#6a6a6a";
-                if (isCurrentTile) tileBg = "#35c0cd";
-                else if (isSubmittedTile) tileBg = "#79bb3b";
+                if (numsForSection.length === 0) return null;
 
                 return (
-                  <button
-                    key={n}
-                    onClick={async () => {
-                      if (
-                        !isSubmitted &&
-                        !isFinalized &&
-                        draft.trim().length > 0 &&
-                        draft !== lastSavedDraft
-                      ) {
-                        await saveDraft();
-                      }
-                      router.push(`/q/${n}`);
-                    }}
-                    style={{
-                      position: "relative",
-                      width: 28,
-                      height: 28,
-                      border: isCurrent
-                        ? "2px solid #fff"
-                        : "1px solid #4a4a4a",
-                      background: tileBg,
-                      color: "#fff",
-                      fontSize: 12,
-                      fontWeight: 400,
-                      cursor: "pointer",
-                      padding: 0,
-                      overflow: "hidden",
-                    }}
-                    title={isCurrent ? "Current question" : `Go to Q${n}`}
-                  >
-                    {isDraftLike && !isCurrentTile ? (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          right: 0,
-                          width: 0,
-                          height: 0,
-                          borderTop: "11px solid #cf2d2d",
-                          borderLeft: "11px solid transparent",
-                        }}
-                      />
-                    ) : null}
-                    <span style={{ position: "relative", zIndex: 1 }}>{n}</span>
-                  </button>
+                  <div key={sec} style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 6, fontSize: 13 }}>
+                      Section {sec}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, 28px)",
+                        gap: 4,
+                      }}
+                    >
+                      {numsForSection.map((n) => {
+                        const isCurrent = n === questionNumber;
+                        const st = getTileState(n);
+                        const qidForN = questionsIdByNumber[n] ?? "";
+
+                        const partLabels = qidForN
+                          ? (partLabelsByQuestionId[qidForN] ?? [])
+                          : [];
+
+                        const hasParts = partLabels.length > 0;
+                        const savedText = qidForN
+                          ? (answerTextByQuestionId[qidForN] ?? "")
+                          : "";
+
+                        const partsComplete = hasParts
+                          ? allPartsAnswered(savedText, partLabels)
+                          : true;
+
+                        const isSubmittedTile =
+                          ((st === "submitted") ||
+                            (qidForN ? savedQuestionIds.has(qidForN) : false)) &&
+                          partsComplete;
+                        const isCurrentTile = isCurrent;
+                        const isDraftLike =
+                          st === "draft" || (st === "submitted" && !partsComplete);
+
+                        let tileBg = "#6a6a6a";
+                        if (isCurrentTile) tileBg = "#35c0cd";
+                        else if (isSubmittedTile) tileBg = "#79bb3b";
+
+                        return (
+                          <button
+                            key={n}
+                            onClick={async () => {
+                              if (
+                                !isSubmitted &&
+                                !isFinalized &&
+                                draft.trim().length > 0 &&
+                                draft !== lastSavedDraft
+                              ) {
+                                await saveDraft();
+                              }
+                              router.push(`/q/${n}`);
+                            }}
+                            style={{
+                              position: "relative",
+                              width: 28,
+                              height: 28,
+                              border: isCurrent
+                                ? "2px solid #fff"
+                                : "1px solid #4a4a4a",
+                              background: tileBg,
+                              color: "#fff",
+                              fontSize: 12,
+                              fontWeight: 400,
+                              cursor: "pointer",
+                              padding: 0,
+                              overflow: "hidden",
+                            }}
+                            title={isCurrent ? "Current question" : `Go to Q${n}`}
+                          >
+                            {isDraftLike && !isCurrentTile ? (
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  top: 0,
+                                  right: 0,
+                                  width: 0,
+                                  height: 0,
+                                  borderTop: "11px solid #cf2d2d",
+                                  borderLeft: "11px solid transparent",
+                                }}
+                              />
+                            ) : null}
+                            <span style={{ position: "relative", zIndex: 1 }}>
+                              {n}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </div>
