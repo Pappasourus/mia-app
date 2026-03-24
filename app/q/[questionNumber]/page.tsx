@@ -1619,15 +1619,8 @@ export default function QuestionPage() {
                         return (
                           <button
                             key={n}
-                            onClick={async () => {
-                              if (
-                                !isSubmitted &&
-                                !isFinalized &&
-                                draft.trim().length > 0 &&
-                                draft !== lastSavedDraft
-                              ) {
-                                await saveDraft();
-                              }
+                            // ===== ANCHOR: question-page-tile-nav-no-autosave =====
+                            onClick={() => {
                               router.push(`/q/${n}`);
                             }}
                             style={{
