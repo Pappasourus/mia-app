@@ -78,7 +78,7 @@ export default function QuestionPage() {
       );
     }
   }, [questionNumber]);
-    useEffect(() => {
+  useEffect(() => {
     const raw = window.sessionStorage.getItem("mia_saved_question_ids");
     if (!raw) return;
 
@@ -119,6 +119,9 @@ export default function QuestionPage() {
   const [questionsIdByNumber, setQuestionsIdByNumber] = useState<
     Record<number, string>
   >({});
+  const [sectionByQuestionNumber, setSectionByQuestionNumber] = useState<
+    Record<number, "A" | "B" | "C" | "Other">
+  >({});
 
   const [answerRow, setAnswerRow] = useState<AnswerRow | null>(null);
 
@@ -145,7 +148,7 @@ export default function QuestionPage() {
   const [statusText, setStatusText] = useState<string>("");
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
   const [currentTestId, setCurrentTestId] = useState<string>("");
-    const [savedQuestionIds, setSavedQuestionIds] = useState<Set<string>>(
+  const [savedQuestionIds, setSavedQuestionIds] = useState<Set<string>>(
     new Set(),
   );
   const [hasStarted, setHasStarted] = useState(false);
@@ -364,6 +367,39 @@ export default function QuestionPage() {
             if (Number.isFinite(n) && id) map[n] = id;
           }
           setQuestionsIdByNumber(map);
+
+          const qidsForSections = Object.values(map).filter(Boolean);
+
+          if (qidsForSections.length > 0) {
+            const { data: qMetaData, error: qMetaErr } = await sb
+              .from("questions")
+              .select("id, section")
+              .in("id", qidsForSections);
+
+            if (!qMetaErr) {
+              const sectionById: Record<string, "A" | "B" | "C" | "Other"> = {};
+              for (const row of qMetaData ?? []) {
+                const id = String((row as any)?.id ?? "");
+                const secRaw = String((row as any)?.section ?? "").trim();
+                const sec =
+                  secRaw === "A" || secRaw === "B" || secRaw === "C"
+                    ? secRaw
+                    : "Other";
+                if (id) sectionById[id] = sec;
+              }
+
+              const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
+              for (const [numStr, qid] of Object.entries(map)) {
+                sectionMap[Number(numStr)] = sectionById[qid] ?? "Other";
+              }
+
+              setSectionByQuestionNumber(sectionMap);
+            } else {
+              setSectionByQuestionNumber({});
+            }
+          } else {
+            setSectionByQuestionNumber({});
+          }
 
           // Load sub-question labels for ALL questions in this test (for tile logic)
           const allQids = Object.values(map).filter(Boolean);
@@ -1370,7 +1406,7 @@ export default function QuestionPage() {
                   </div>
 
                   <button
-                                        onClick={async () => {
+                    onClick={async () => {
                       const ok = await saveDraft();
                       if (!ok || !question) return;
 
@@ -1494,8 +1530,8 @@ export default function QuestionPage() {
                   ? allPartsAnswered(savedText, partLabels)
                   : true;
 
-                                const isSubmittedTile =
-                  ((st === "submitted") ||
+                const isSubmittedTile =
+                  (st === "submitted" ||
                     (qidForN ? savedQuestionIds.has(qidForN) : false)) &&
                   partsComplete;
                 const isCurrentTile = isCurrent;
