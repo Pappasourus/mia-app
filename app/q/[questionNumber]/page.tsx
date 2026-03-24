@@ -1419,7 +1419,19 @@ export default function QuestionPage() {
                   }}
                 >
                   <button
-                    onClick={() => prevNum && router.push(`/q/${prevNum}`)}
+                    // ===== ANCHOR: question-page-prev-autosave-without-green =====
+                    onClick={async () => {
+                      if (!prevNum || isSubmitted || isFinalized) {
+                        if (prevNum) router.push(`/q/${prevNum}`);
+                        return;
+                      }
+
+                      if (draft.trim().length > 0 && draft !== lastSavedDraft) {
+                        await saveDraft({ silent: true });
+                      }
+
+                      router.push(`/q/${prevNum}`);
+                    }}
                     disabled={!prevNum}
                     style={{
                       height: 30,
@@ -1598,7 +1610,6 @@ export default function QuestionPage() {
                         // ===== ANCHOR: question-page-tile-saved-vs-unsaved =====
                         const isSavedTile =
                           (st === "submitted" ||
-                            st === "draft" ||
                             (qidForN
                               ? savedQuestionIds.has(qidForN)
                               : false)) &&
@@ -1606,11 +1617,9 @@ export default function QuestionPage() {
 
                         const isCurrentTile = isCurrent;
 
-                        const isUnsavedTile =
-                          isCurrentTile &&
-                          !isSubmitted &&
-                          draft.trim().length > 0 &&
-                          draft !== lastSavedDraft;
+                        const isUnsavedTile = qidForN
+                          ? st === "draft" && !savedQuestionIds.has(qidForN)
+                          : false;
 
                         let tileBg = "#6a6a6a";
                         if (isCurrentTile) tileBg = "#35c0cd";
@@ -1619,8 +1628,16 @@ export default function QuestionPage() {
                         return (
                           <button
                             key={n}
-                            // ===== ANCHOR: question-page-tile-nav-no-autosave =====
-                            onClick={() => {
+                            // ===== ANCHOR: question-page-tile-nav-autosave-without-green =====
+                            onClick={async () => {
+                              if (
+                                !isSubmitted &&
+                                !isFinalized &&
+                                draft.trim().length > 0 &&
+                                draft !== lastSavedDraft
+                              ) {
+                                await saveDraft({ silent: true });
+                              }
                               router.push(`/q/${n}`);
                             }}
                             style={{
@@ -1733,7 +1750,17 @@ export default function QuestionPage() {
 
           <div style={{ marginTop: 16 }}>
             <button
-              onClick={() => saveDraft()}
+              onClick={async () => {
+                const ok = await saveDraft();
+                if (!ok || !question) return;
+
+                setSavedQuestionIds((prev) => {
+                  const next = new Set(prev);
+                  next.add(question.id);
+                  persistSavedQuestionIds(next);
+                  return next;
+                });
+              }}
               disabled={isSubmitted || isFinalized}
               style={{
                 width: "100%",
