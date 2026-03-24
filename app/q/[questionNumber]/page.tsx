@@ -354,6 +354,7 @@ export default function QuestionPage() {
           .eq("test_id", currentTestId)
           .order("sort_order", { ascending: true });
 
+        // ===== ANCHOR: question-page-build-nav-and-sections =====
         if (!tqErr && tqData?.length) {
           const nums = (tqData ?? [])
             .map((r: any) => Number(r?.sort_order))
@@ -361,34 +362,50 @@ export default function QuestionPage() {
           setAllQuestionNumbers(nums);
 
           const map: Record<number, string> = {};
+          const questionIds: string[] = [];
+
           for (const r of tqData ?? []) {
             const n = Number((r as any)?.sort_order);
             const id = String((r as any)?.question_id ?? "");
-            if (Number.isFinite(n) && id) map[n] = id;
+            if (Number.isFinite(n) && id) {
+              map[n] = id;
+              questionIds.push(id);
+            }
           }
           setQuestionsIdByNumber(map);
 
-          // ===== ANCHOR: question-page-build-section-map =====
           const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
-          for (const r of tqData ?? []) {
-            const n = Number((r as any)?.sort_order);
-            const qRel = (r as any)?.questions;
 
-            const secRaw = String(
-              Array.isArray(qRel)
-                ? (qRel[0]?.section ?? "")
-                : (qRel?.section ?? ""),
-            ).trim();
+          const { data: questionSectionsData, error: questionSectionsErr } =
+            await sb
+              .from("questions")
+              .select("id, section")
+              .in("id", questionIds);
 
-            const sec =
-              secRaw === "A" || secRaw === "B" || secRaw === "C"
-                ? secRaw
-                : "Other";
+          const sectionByQuestionId: Record<string, "A" | "B" | "C" | "Other"> =
+            {};
 
-            if (Number.isFinite(n)) {
-              sectionMap[n] = sec;
+          if (!questionSectionsErr) {
+            for (const q of questionSectionsData ?? []) {
+              const qid = String((q as any)?.id ?? "");
+              const secRaw = String((q as any)?.section ?? "").trim();
+
+              sectionByQuestionId[qid] =
+                secRaw === "A" || secRaw === "B" || secRaw === "C"
+                  ? secRaw
+                  : "Other";
             }
           }
+
+          for (const r of tqData ?? []) {
+            const n = Number((r as any)?.sort_order);
+            const qid = String((r as any)?.question_id ?? "");
+
+            if (Number.isFinite(n)) {
+              sectionMap[n] = sectionByQuestionId[qid] ?? "Other";
+            }
+          }
+
           setSectionByQuestionNumber(sectionMap);
 
           // Load sub-question labels for ALL questions in this test (for tile logic)
