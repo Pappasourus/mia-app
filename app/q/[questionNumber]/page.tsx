@@ -350,7 +350,7 @@ export default function QuestionPage() {
       if (currentTestId) {
         const { data: tqData, error: tqErr } = await sb
           .from("test_questions")
-          .select("question_id, sort_order")
+          .select("question_id, sort_order, questions(section)")
           .eq("test_id", currentTestId)
           .order("sort_order", { ascending: true });
 
@@ -368,38 +368,26 @@ export default function QuestionPage() {
           }
           setQuestionsIdByNumber(map);
 
-          const qidsForSections = Object.values(map).filter(Boolean);
+          const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
+          for (const r of tqData ?? []) {
+            const n = Number((r as any)?.sort_order);
+            const secRaw = String(
+              ((r as any)?.questions?.section ??
+                Array.isArray((r as any)?.questions))
+                ? ((r as any)?.questions?.[0]?.section ?? "")
+                : "",
+            ).trim();
 
-          if (qidsForSections.length > 0) {
-            const { data: qMetaData, error: qMetaErr } = await sb
-              .from("questions")
-              .select("id, section")
-              .in("id", qidsForSections);
+            const sec =
+              secRaw === "A" || secRaw === "B" || secRaw === "C"
+                ? secRaw
+                : "Other";
 
-            if (!qMetaErr) {
-              const sectionById: Record<string, "A" | "B" | "C" | "Other"> = {};
-              for (const row of qMetaData ?? []) {
-                const id = String((row as any)?.id ?? "");
-                const secRaw = String((row as any)?.section ?? "").trim();
-                const sec =
-                  secRaw === "A" || secRaw === "B" || secRaw === "C"
-                    ? secRaw
-                    : "Other";
-                if (id) sectionById[id] = sec;
-              }
-
-              const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
-              for (const [numStr, qid] of Object.entries(map)) {
-                sectionMap[Number(numStr)] = sectionById[qid] ?? "Other";
-              }
-
-              setSectionByQuestionNumber(sectionMap);
-            } else {
-              setSectionByQuestionNumber({});
+            if (Number.isFinite(n)) {
+              sectionMap[n] = sec;
             }
-          } else {
-            setSectionByQuestionNumber({});
           }
+          setSectionByQuestionNumber(sectionMap);
 
           // Load sub-question labels for ALL questions in this test (for tile logic)
           const allQids = Object.values(map).filter(Boolean);
@@ -1496,10 +1484,6 @@ export default function QuestionPage() {
               Questions
             </div>
 
-            <div style={{ marginBottom: 10, fontSize: 14 }}>
-              Section {question?.section ?? "A"}
-            </div>
-
             <div
               style={{
                 display: "grid",
@@ -1508,11 +1492,14 @@ export default function QuestionPage() {
                 marginBottom: 12,
               }}
             >
-                            {(["A", "B", "C", "Other"] as const).map((sec) => {
-                const numsForSection = (allQuestionNumbers.length
-                  ? allQuestionNumbers
-                  : [questionNumber]
-                ).filter((n) => (sectionByQuestionNumber[n] ?? "Other") === sec);
+              {(["A", "B", "C", "Other"] as const).map((sec) => {
+                const numsForSection = (
+                  allQuestionNumbers.length
+                    ? allQuestionNumbers
+                    : [questionNumber]
+                ).filter(
+                  (n) => (sectionByQuestionNumber[n] ?? "Other") === sec,
+                );
 
                 if (numsForSection.length === 0) return null;
 
@@ -1548,12 +1535,15 @@ export default function QuestionPage() {
                           : true;
 
                         const isSubmittedTile =
-                          ((st === "submitted") ||
-                            (qidForN ? savedQuestionIds.has(qidForN) : false)) &&
+                          (st === "submitted" ||
+                            (qidForN
+                              ? savedQuestionIds.has(qidForN)
+                              : false)) &&
                           partsComplete;
                         const isCurrentTile = isCurrent;
                         const isDraftLike =
-                          st === "draft" || (st === "submitted" && !partsComplete);
+                          st === "draft" ||
+                          (st === "submitted" && !partsComplete);
 
                         let tileBg = "#6a6a6a";
                         if (isCurrentTile) tileBg = "#35c0cd";
@@ -1588,7 +1578,9 @@ export default function QuestionPage() {
                               padding: 0,
                               overflow: "hidden",
                             }}
-                            title={isCurrent ? "Current question" : `Go to Q${n}`}
+                            title={
+                              isCurrent ? "Current question" : `Go to Q${n}`
+                            }
                           >
                             {isDraftLike && !isCurrentTile ? (
                               <span
