@@ -355,7 +355,11 @@ export default function QuestionPage() {
           .order("sort_order", { ascending: true });
 
         // ===== ANCHOR: question-page-build-nav-and-sections =====
-        if (!tqErr && tqData?.length) {
+        // ===== ANCHOR: debug-tqdata =====
+console.log("tqData", tqData);
+console.log("tqErr", tqErr);
+
+if (!tqErr && tqData?.length) {
           const nums = (tqData ?? [])
             .map((r: any) => Number(r?.sort_order))
             .filter((n) => Number.isFinite(n));
