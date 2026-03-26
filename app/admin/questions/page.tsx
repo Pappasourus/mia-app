@@ -155,6 +155,9 @@ export default function AdminQuestionsPage() {
     setTableRows("3");
     setTableCols("3");
     setTableAutoNumber(false);
+    setColHeadings([]);
+setRowHeadings([]);
+setTableData([]);
     setParts([]);
     setStatus("");
   }
@@ -177,10 +180,21 @@ export default function AdminQuestionsPage() {
     setAnswerMode(mode);
 
     if (mode === "table" && q.table_config) {
-      setTableRows(String(q.table_config.rows ?? 3));
-      setTableCols(String(q.table_config.cols ?? 3));
-      setTableAutoNumber(Boolean(q.table_config.autoNumber));
-    } else {
+  setTableRows(String(q.table_config.rows ?? 3));
+  setTableCols(String(q.table_config.cols ?? 3));
+  setTableAutoNumber(Boolean(q.table_config.autoNumber));
+
+  setColHeadings(q.table_config.colHeadings ?? []);
+  setRowHeadings(q.table_config.rowHeadings ?? []);
+  setTableData(q.table_config.presetCells ?? []);
+} else {
+  setTableRows("3");
+  setTableCols("3");
+  setTableAutoNumber(false);
+  setColHeadings([]);
+  setRowHeadings([]);
+  setTableData([]);
+}
       setTableRows("3");
       setTableCols("3");
       setTableAutoNumber(false);
@@ -271,13 +285,16 @@ export default function AdminQuestionsPage() {
     const section = (qSection || null) as any;
     const answer_mode = answerMode;
     const table_config =
-      answerMode === "table"
-        ? {
-            rows: Number(tableRows) || 0,
-            cols: Number(tableCols) || 0,
-            autoNumber: tableAutoNumber,
-          }
-        : null;
+  answerMode === "table"
+    ? {
+        rows: Number(tableRows) || 0,
+        cols: Number(tableCols) || 0,
+        autoNumber: tableAutoNumber,
+        colHeadings,
+        rowHeadings,
+        presetCells: tableData,
+      }
+    : null;
 
     if (!title) {
       setStatus("❌ Title is required.");
