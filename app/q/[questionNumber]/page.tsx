@@ -1235,6 +1235,7 @@ export default function QuestionPage() {
                   </div>
                 </div>
 
+                {                {/* ===== ANCHOR: question-page-answer-render-with-table ===== */}
                 {parts.length > 0 ? (
                   <div style={{ padding: "12px 42px 12px 14px" }}>
                     {parts.map((p) => (
@@ -1318,6 +1319,144 @@ export default function QuestionPage() {
                         />
                       </div>
                     ))}
+                  </div>
+                ) : question.answer_mode === "table" && question.table_config ? (
+                  <div style={{ padding: "12px 42px 12px 14px", overflowX: "auto" }}>
+                    {(() => {
+                      const rows = Number(question.table_config?.rows ?? 0);
+                      const cols = Number(question.table_config?.cols ?? 0);
+                      const autoNumber = Boolean(
+                        question.table_config?.autoNumber,
+                      );
+                      const colHeadings = question.table_config?.colHeadings ?? [];
+                      const presetCells = question.table_config?.presetCells ?? [];
+
+                      let parsedTable: any = null;
+                      try {
+                        parsedTable = JSON.parse(draft || "{}");
+                      } catch {}
+
+                      const studentData =
+                        parsedTable?.type === "table" &&
+                        Array.isArray(parsedTable?.data)
+                          ? parsedTable.data
+                          : Array.from({ length: rows }, () =>
+                              Array.from({ length: cols }, () => ""),
+                            );
+
+                      const setTableCell = (
+                        r: number,
+                        c: number,
+                        value: string,
+                      ) => {
+                        const next = Array.from({ length: rows }, (_, ri) =>
+                          Array.from(
+                            { length: cols },
+                            (_, ci) => studentData?.[ri]?.[ci] ?? "",
+                          ),
+                        );
+                        next[r][c] = value;
+
+                        setDraft(
+                          JSON.stringify({
+                            type: "table",
+                            rows,
+                            cols,
+                            data: next,
+                          }),
+                        );
+                      };
+
+                      return (
+                        <table
+                          style={{
+                            borderCollapse: "collapse",
+                            width: "100%",
+                            maxWidth: 900,
+                            background: "#fff",
+                          }}
+                        >
+                          <thead>
+                            <tr>
+                              {Array.from({ length: cols }).map((_, c) => (
+                                <th
+                                  key={c}
+                                  style={{
+                                    border: "1px solid #cfcfcf",
+                                    background: "#ececec",
+                                    padding: "8px 10px",
+                                    textAlign: "left",
+                                    fontSize: 14,
+                                  }}
+                                >
+                                  {colHeadings[c] ||
+                                    (autoNumber && c === 0 ? "#" : "")}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {Array.from({ length: rows }).map((_, r) => (
+                              <tr key={r}>
+                                {Array.from({ length: cols }).map((_, c) => {
+                                  const teacherValue = String(
+                                    presetCells?.[r]?.[c] ?? "",
+                                  );
+                                  const studentValue = String(
+                                    studentData?.[r]?.[c] ?? "",
+                                  );
+                                  const locked = teacherValue.trim().length > 0;
+
+                                  return (
+                                    <td
+                                      key={c}
+                                      style={{
+                                        border: "1px solid #cfcfcf",
+                                        padding: 0,
+                                        background: locked ? "#f1f1f1" : "#fff",
+                                      }}
+                                    >
+                                      {locked ? (
+                                        <div
+                                          style={{
+                                            minWidth: 90,
+                                            padding: "10px 12px",
+                                            fontSize: 15,
+                                            color: "#222",
+                                            minHeight: 22,
+                                          }}
+                                        >
+                                          {teacherValue}
+                                        </div>
+                                      ) : (
+                                        <input
+                                          value={studentValue}
+                                          onChange={(e) =>
+                                            setTableCell(r, c, e.target.value)
+                                          }
+                                          disabled={isSubmitted || isFinalized}
+                                          style={{
+                                            width: "100%",
+                                            minWidth: 90,
+                                            border: "none",
+                                            outline: "none",
+                                            padding: "10px 12px",
+                                            fontSize: 15,
+                                            background: "#fff",
+                                            boxSizing: "border-box",
+                                          }}
+                                        />
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <textarea
