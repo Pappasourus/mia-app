@@ -1400,12 +1400,20 @@ export default function QuestionPage() {
                             {Array.from({ length: rows }).map((_, r) => (
                               <tr key={r}>
                                 {Array.from({ length: cols }).map((_, c) => {
+                                                                    // ===== ANCHOR: question-page-table-autonumber-cells =====
+                                  const autoNumberValue =
+                                    autoNumber && c === 0 ? String(r + 1) : "";
+
                                   const teacherValue = String(
-                                    presetCells?.[r]?.[c] ?? "",
+                                    autoNumberValue ||
+                                      presetCells?.[r]?.[c] ||
+                                      "",
                                   );
+
                                   const studentValue = String(
                                     studentData?.[r]?.[c] ?? "",
                                   );
+
                                   const locked = teacherValue.trim().length > 0;
 
                                   return (
