@@ -165,6 +165,14 @@ export default function QuestionPage() {
   );
   const [hasStarted, setHasStarted] = useState(false);
 
+    // ===== ANCHOR: question-page-reset-start-when-locked =====
+  useEffect(() => {
+    if (isFinalized) {
+      window.sessionStorage.removeItem("mia_test_started");
+      setHasStarted(false);
+    }
+  }, [isFinalized]);
+
   useEffect(() => {
     const started = window.sessionStorage.getItem("mia_test_started");
     if (started === "true") {
