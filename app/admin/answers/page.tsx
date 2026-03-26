@@ -11,12 +11,25 @@ type StudentRow = {
   role: "student" | "admin";
 };
 
+// ===== ANCHOR: admin-answers-questionrow-with-table =====
+type QuestionTableConfig = {
+  rows?: number;
+  cols?: number;
+  autoNumber?: boolean;
+  colHeadings?: string[];
+  rowHeadings?: string[];
+  presetCells?: string[][];
+};
+
 type QuestionRow = {
   id: string;
   question_number: number;
   title: string;
   marks: number;
   prompt: string;
+  section?: string | null;
+  answer_mode?: "text" | "table" | null;
+  table_config?: QuestionTableConfig | null;
 };
 
 type TestRow = {
@@ -259,7 +272,9 @@ export default function AdminAnswersPage() {
 
       const { data: qRows, error: qErr } = await sb
         .from("questions")
-        .select("id, question_number, title, marks, prompt, section")
+        .select(
+          "id, question_number, title, marks, prompt, section, answer_mode, table_config",
+        )
         .in("id", qids);
 
       if (cancelled) return;
@@ -287,7 +302,10 @@ export default function AdminAnswersPage() {
             marks: Number(q.marks ?? 0),
             prompt: String(q.prompt ?? ""),
             section: String(q.section ?? ""),
-          } as QuestionRow & { section?: string };
+            answer_mode: (q.answer_mode as "text" | "table" | null) ?? "text",
+            table_config:
+              (q.table_config as QuestionTableConfig | null) ?? null,
+          } as QuestionRow;
         })
         .filter(Boolean) as any;
 
@@ -318,6 +336,156 @@ export default function AdminAnswersPage() {
       return null;
     }
   }
+
+  // ===== ANCHOR: admin-answers-table-helpers =====
+  function tryParseTableJson(s: string): {
+    type: "table";
+    rows: number;
+    cols: number;
+    data: string[][];
+  } | null {
+    try {
+      const parsed = JSON.parse(s || "{}");
+      if (
+        parsed?.type === "table" &&
+        Number.isFinite(parsed?.rows) &&
+        Number.isFinite(parsed?.cols) &&
+        Array.isArray(parsed?.data)
+      ) {
+        return parsed as any;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function buildRenderedTable(
+    q: QuestionRow,
+    answerText: string,
+  ): {
+    rows: number;
+    cols: number;
+    autoNumber: boolean;
+    colHeadings: string[];
+    mergedData: string[][];
+  } | null {
+    if (q.answer_mode !== "table" || !q.table_config) return null;
+
+    const rows = Number(q.table_config.rows ?? 0);
+    const cols = Number(q.table_config.cols ?? 0);
+
+    if (!rows || !cols) return null;
+
+    const autoNumber = Boolean(q.table_config.autoNumber);
+    const colHeadings = Array.isArray(q.table_config.colHeadings)
+      ? q.table_config.colHeadings.map((x) => String(x ?? ""))
+      : [];
+
+    const presetCells = Array.isArray(q.table_config.presetCells)
+      ? q.table_config.presetCells
+      : [];
+
+    const parsed = tryParseTableJson(answerText);
+    const studentData = parsed?.data ?? [];
+
+    const mergedData = Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: cols }, (_, c) => {
+        const teacherValue = String(presetCells?.[r]?.[c] ?? "");
+        const studentValue = String(studentData?.[r]?.[c] ?? "");
+        return teacherValue || studentValue || "";
+      }),
+    );
+
+    return {
+      rows,
+      cols,
+      autoNumber,
+      colHeadings,
+      mergedData,
+    };
+  }
+
+  function drawTableToPdf(
+    doc: any,
+    startY: number,
+    pageH: number,
+    margin: number,
+    maxW: number,
+    tableView: {
+      rows: number;
+      cols: number;
+      autoNumber: boolean;
+      colHeadings: string[];
+      mergedData: string[][];
+    },
+  ) {
+    let y = startY;
+
+    const cellPadding = 4;
+    const lineHeight = 10;
+    const totalCols = tableView.cols + (tableView.autoNumber ? 1 : 0);
+    const colWidth = maxW / Math.max(totalCols, 1);
+
+    function drawRow(cells: string[], isHeader = false) {
+      const rowLines = cells.map((cell) => {
+        const lines = doc.splitTextToSize(
+          String(cell ?? ""),
+          colWidth - cellPadding * 2,
+        );
+        return lines.length ? lines : [""];
+      });
+
+      const maxLines = Math.max(...rowLines.map((lines) => lines.length), 1);
+      const rowHeight = Math.max(18, cellPadding * 2 + maxLines * lineHeight);
+
+      if (y + rowHeight > pageH - margin) {
+        doc.addPage();
+        y = margin;
+      }
+
+      for (let c = 0; c < cells.length; c++) {
+        const x = margin + c * colWidth;
+        doc.rect(x, y, colWidth, rowHeight);
+
+        if (isHeader) {
+          doc.setFont("helvetica", "bold");
+        } else {
+          doc.setFont("helvetica", "normal");
+        }
+
+        let textY = y + 12;
+        for (const line of rowLines[c]) {
+          doc.text(String(line), x + cellPadding, textY);
+          textY += lineHeight;
+        }
+      }
+
+      y += rowHeight;
+    }
+
+    const headerCells = [
+      ...(tableView.autoNumber ? ["#"] : []),
+      ...Array.from({ length: tableView.cols }, (_, c) =>
+        String(tableView.colHeadings[c] ?? ""),
+      ),
+    ];
+
+    drawRow(headerCells, true);
+
+    for (let r = 0; r < tableView.rows; r++) {
+      const bodyCells = [
+        ...(tableView.autoNumber ? [String(r + 1)] : []),
+        ...Array.from({ length: tableView.cols }, (_, c) =>
+          String(tableView.mergedData?.[r]?.[c] ?? ""),
+        ),
+      ];
+
+      drawRow(bodyCells, false);
+    }
+
+    return y + 10;
+  }
   // ===== ANCHOR: admin-answers-export-all-pdfs =====
   async function exportAllStudentsPdfs() {
     if (students.length === 0) {
@@ -334,22 +502,22 @@ export default function AdminAnswersPage() {
     const { jsPDF } = await import("jspdf");
 
     for (const s of students) {
-  // ===== ANCHOR: export-direct-fetch-per-student =====
-  const { data: studentAnswers, error: aErr } = await sb!
-    .from("answers")
-    .select("question_id, status, draft_text, submitted_text")
-    .eq("student_user_id", s.user_id)
-    .eq("test_id", selectedTestId);
+      // ===== ANCHOR: export-direct-fetch-per-student =====
+      const { data: studentAnswers, error: aErr } = await sb!
+        .from("answers")
+        .select("question_id, status, draft_text, submitted_text")
+        .eq("student_user_id", s.user_id)
+        .eq("test_id", selectedTestId);
 
-  if (aErr) {
-    console.error("Failed to load answers for", s.email, aErr);
-    continue;
-  }
+      if (aErr) {
+        console.error("Failed to load answers for", s.email, aErr);
+        continue;
+      }
 
-  const answerMap = new Map<string, any>();
-  for (const a of studentAnswers ?? []) {
-    answerMap.set(a.question_id, a);
-  }
+      const answerMap = new Map<string, any>();
+      for (const a of studentAnswers ?? []) {
+        answerMap.set(a.question_id, a);
+      }
 
       // Build a PDF with the answers currently loaded for this student
       const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -430,10 +598,13 @@ export default function AdminAnswersPage() {
         y += 14;
 
         const asParts = tryParsePartJson(answerText);
+        const tableView = buildRenderedTable(q, answerText);
 
-        // If the answer is JSON part-answers AND this question has parts, print each part separately
+        // If the answer is a table, render the full table first
         const partMeta = partsByQid.get(q.id) ?? [];
-        if (asParts && partMeta.length > 0) {
+        if (tableView) {
+          y = drawTableToPdf(doc, y, pageH, margin, maxW, tableView);
+        } else if (asParts && partMeta.length > 0) {
           for (const p of partMeta) {
             const label = String((p as any).part_label ?? "").trim();
             const pm = Number((p as any).marks ?? 0);
@@ -485,7 +656,6 @@ export default function AdminAnswersPage() {
       doc.save(filename);
 
       // Small pause so downloads don't collide
-      
     }
 
     setStatusMsg("✅ Exported PDFs for all users.");
@@ -603,55 +773,12 @@ export default function AdminAnswersPage() {
       y += 18;
 
       const asParts = tryParsePartJson(answerText);
-      // ===== ANCHOR: table-answer-detect =====
-      let asTable: any = null;
-      try {
-        const parsed = JSON.parse(answerText || "{}");
-        if (parsed?.type === "table" && Array.isArray(parsed.data)) {
-          asTable = parsed;
-        }
-      } catch {}
+      const tableView = buildRenderedTable(q, answerText);
 
-      // If the answer is JSON part-answers AND this question has parts, print each part separately
+      // If the answer is a table, render the full table first
       const partMeta = partsByQid.get(q.id) ?? [];
-      if (asTable) {
-        // ===== ANCHOR: table-render-pdf-dynamic-height =====
-        const cellPadding = 4;
-        const lineHeight = 10;
-        const colWidth = maxW / Math.max(asTable.cols || 1, 1);
-
-        for (let r = 0; r < asTable.rows; r++) {
-          const rowLines: string[][] = [];
-
-          for (let c = 0; c < asTable.cols; c++) {
-            const cell = String(asTable.data?.[r]?.[c] ?? "");
-            const lines = doc.splitTextToSize(cell || "", colWidth - cellPadding * 2);
-            rowLines.push(lines.length ? lines : [""]);
-          }
-
-          const maxLines = Math.max(...rowLines.map((lines) => lines.length), 1);
-          const rowHeight = Math.max(18, cellPadding * 2 + maxLines * lineHeight);
-
-          if (y + rowHeight > pageH - margin) {
-            doc.addPage();
-            y = margin;
-          }
-
-          for (let c = 0; c < asTable.cols; c++) {
-            const x = margin + c * colWidth;
-            doc.rect(x, y, colWidth, rowHeight);
-
-            let textY = y + 12;
-            for (const line of rowLines[c]) {
-              doc.text(String(line), x + cellPadding, textY);
-              textY += lineHeight;
-            }
-          }
-
-          y += rowHeight;
-        }
-
-        y += 10;
+      if (tableView) {
+        y = drawTableToPdf(doc, y, pageH, margin, maxW, tableView);
       } else if (asParts && partMeta.length > 0) {
         for (const p of partMeta) {
           const label = String((p as any).part_label ?? "").trim();
@@ -906,21 +1033,127 @@ export default function AdminAnswersPage() {
                           >
                             <b>Student answer ({labelStatus(st)}):</b>
                           </div>
-                          <pre
-                            style={{
-                              marginTop: 6,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              padding: 12,
-                              borderRadius: 12,
-                              border: "1px solid #eee",
-                              background: "#fafafa",
-                              color: "#111",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            {text || "(empty)"}
-                          </pre>
+                          {(() => {
+                            const tableView = buildRenderedTable(q, text);
+
+                            if (tableView) {
+                              return (
+                                <div
+                                  style={{
+                                    marginTop: 6,
+                                    overflowX: "auto",
+                                    border: "1px solid #eee",
+                                    borderRadius: 12,
+                                    background: "#fafafa",
+                                    padding: 12,
+                                  }}
+                                >
+                                  <table
+                                    style={{
+                                      width: "100%",
+                                      borderCollapse: "collapse",
+                                      color: "#111",
+                                      background: "#fff",
+                                    }}
+                                  >
+                                    <thead>
+                                      <tr>
+                                        {tableView.autoNumber ? (
+                                          <th
+                                            style={{
+                                              border: "1px solid #ddd",
+                                              padding: "8px 10px",
+                                              textAlign: "left",
+                                              background: "#f3f3f3",
+                                            }}
+                                          >
+                                            #
+                                          </th>
+                                        ) : null}
+
+                                        {Array.from(
+                                          { length: tableView.cols },
+                                          (_, c) => (
+                                            <th
+                                              key={c}
+                                              style={{
+                                                border: "1px solid #ddd",
+                                                padding: "8px 10px",
+                                                textAlign: "left",
+                                                background: "#f3f3f3",
+                                              }}
+                                            >
+                                              {tableView.colHeadings[c] || ""}
+                                            </th>
+                                          ),
+                                        )}
+                                      </tr>
+                                    </thead>
+
+                                    <tbody>
+                                      {Array.from(
+                                        { length: tableView.rows },
+                                        (_, r) => (
+                                          <tr key={r}>
+                                            {tableView.autoNumber ? (
+                                              <td
+                                                style={{
+                                                  border: "1px solid #ddd",
+                                                  padding: "8px 10px",
+                                                  verticalAlign: "top",
+                                                  background: "#fafafa",
+                                                }}
+                                              >
+                                                {r + 1}
+                                              </td>
+                                            ) : null}
+
+                                            {Array.from(
+                                              { length: tableView.cols },
+                                              (_, c) => (
+                                                <td
+                                                  key={c}
+                                                  style={{
+                                                    border: "1px solid #ddd",
+                                                    padding: "8px 10px",
+                                                    verticalAlign: "top",
+                                                    whiteSpace: "pre-wrap",
+                                                    wordBreak: "break-word",
+                                                  }}
+                                                >
+                                                  {tableView.mergedData?.[r]?.[
+                                                    c
+                                                  ] || ""}
+                                                </td>
+                                              ),
+                                            )}
+                                          </tr>
+                                        ),
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <pre
+                                style={{
+                                  marginTop: 6,
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  padding: 12,
+                                  borderRadius: 12,
+                                  border: "1px solid #eee",
+                                  background: "#fafafa",
+                                  color: "#111",
+                                  fontFamily: "inherit",
+                                }}
+                              >
+                                {text || "(empty)"}
+                              </pre>
+                            );
+                          })()}
                         </div>
                       ) : null}
                     </div>
