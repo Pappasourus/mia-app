@@ -1235,7 +1235,7 @@ export default function QuestionPage() {
                   </div>
                 </div>
 
-                {                {/* ===== ANCHOR: question-page-answer-render-with-table ===== */}
+                                {/* ===== ANCHOR: question-page-answer-render-with-table ===== */}
                 {parts.length > 0 ? (
                   <div style={{ padding: "12px 42px 12px 14px" }}>
                     {parts.map((p) => (
