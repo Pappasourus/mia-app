@@ -163,7 +163,7 @@ export default function AdminQuestionsPage() {
   }
 
   // ===== ANCHOR: question-load-into-editor-with-table =====
-  f; // ===== ANCHOR: question-load-into-editor-with-table =====
+  // ===== ANCHOR: question-load-into-editor-with-table =====
   function loadIntoEditor(
     q: QuestionRow & {
       answer_mode?: string | null;
