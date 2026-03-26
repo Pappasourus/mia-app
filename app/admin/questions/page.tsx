@@ -54,6 +54,10 @@ export default function AdminQuestionsPage() {
   const [selectedId, setSelectedId] = useState<string>("");
   // ===== ANCHOR: question-table-mode-state =====
   const [answerMode, setAnswerMode] = useState<"text" | "table">("text");
+    // ===== ANCHOR: question-table-config-state =====
+  const [tableRows, setTableRows] = useState<string>("3");
+  const [tableCols, setTableCols] = useState<string>("3");
+  const [tableAutoNumber, setTableAutoNumber] = useState<boolean>(false);
 
   // Base question fields
   const [qNum, setQNum] = useState<string>("");
@@ -545,6 +549,44 @@ export default function AdminQuestionsPage() {
                   Table format question
                 </label>
               </div>
+
+                            {/* ===== ANCHOR: question-table-config-ui ===== */}
+              {answerMode === "table" ? (
+                <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3 space-y-3">
+                  <div className="font-semibold">Table settings</div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="space-y-1">
+                      <div className="text-xs text-slate-400">Rows</div>
+                      <input
+                        value={tableRows}
+                        onChange={(e) => setTableRows(e.target.value)}
+                        className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                        placeholder="e.g. 3"
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <div className="text-xs text-slate-400">Columns</div>
+                      <input
+                        value={tableCols}
+                        onChange={(e) => setTableCols(e.target.value)}
+                        className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
+                        placeholder="e.g. 3"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={tableAutoNumber}
+                      onChange={(e) => setTableAutoNumber(e.target.checked)}
+                    />
+                    Auto-number first column from 1 to number of rows
+                  </label>
+                </div>
+              ) : null}
 
               <label className="space-y-1">
                 <div className="text-xs text-slate-400">
