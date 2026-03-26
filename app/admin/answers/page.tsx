@@ -592,10 +592,51 @@ export default function AdminAnswersPage() {
       y += 18;
 
       const asParts = tryParsePartJson(answerText);
+      // ===== ANCHOR: table-answer-detect =====
+      let asTable: any = null;
+      try {
+        const parsed = JSON.parse(answerText || "{}");
+        if (parsed?.type === "table" && Array.isArray(parsed.data)) {
+          asTable = parsed;
+        }
+      } catch {}
 
       // If the answer is JSON part-answers AND this question has parts, print each part separately
       const partMeta = partsByQid.get(q.id) ?? [];
-      if (asParts && partMeta.length > 0) {
+      if (asTable) {
+        // ===== ANCHOR: table-render-pdf =====
+        const cellPadding = 4;
+        const colWidth = maxW / (asTable.cols || 1);
+        const rowHeight = 18;
+
+        for (let r = 0; r < asTable.rows; r++) {
+          if (y > pageH - margin - 40) {
+            doc.addPage();
+            y = margin;
+          }
+
+          for (let c = 0; c < asTable.cols; c++) {
+            const x = margin + c * colWidth;
+            const cell = String(asTable.data?.[r]?.[c] ?? "");
+
+            doc.rect(x, y, colWidth, rowHeight);
+
+            const text = cell || "";
+            const lines = doc.splitTextToSize(text, colWidth - cellPadding * 2);
+
+            let textY = y + 12;
+
+            for (const line of lines) {
+              doc.text(line, x + cellPadding, textY);
+              textY += 10;
+            }
+          }
+
+          y += rowHeight;
+        }
+
+        y += 10;
+      } else if (asParts && partMeta.length > 0) {
         for (const p of partMeta) {
           const label = String((p as any).part_label ?? "").trim();
           const pm = Number((p as any).marks ?? 0);
