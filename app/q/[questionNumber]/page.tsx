@@ -983,6 +983,43 @@ export default function QuestionPage() {
             <p style={{ marginTop: 18, color: "crimson", fontSize: 13 }}>
               {errorMsg}
             </p>
+          ) : isFinalized ? (
+            <div
+              style={{
+                maxWidth: 760,
+                marginTop: 24,
+                padding: 24,
+                background: "#efefef",
+                border: "1px solid #d4d4d4",
+              }}
+            >
+              <h2 style={{ margin: 0, fontSize: 24, color: "#111" }}>
+                Waiting to start
+              </h2>
+              <p style={{ marginTop: 12, fontSize: 16, color: "#333" }}>
+                Please wait for your teacher to unlock the test.
+              </p>
+
+              <button
+                disabled
+                style={{
+                  marginTop: 18,
+                  padding: "12px 18px",
+                  border: "1px solid #8ab63f",
+                  background: "#a7bf82",
+                  color: "#fff",
+                  fontSize: 16,
+                  cursor: "not-allowed",
+                  opacity: 0.8,
+                }}
+              >
+                Start Test
+              </button>
+
+              <p style={{ marginTop: 12, fontSize: 13, color: "#7f1d1d" }}>
+                The test is currently locked.
+              </p>
+            </div>
           ) : !hasStarted ? (
             <div
               style={{
