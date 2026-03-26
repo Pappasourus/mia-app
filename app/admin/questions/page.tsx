@@ -54,7 +54,7 @@ export default function AdminQuestionsPage() {
   const [selectedId, setSelectedId] = useState<string>("");
   // ===== ANCHOR: question-table-mode-state =====
   const [answerMode, setAnswerMode] = useState<"text" | "table">("text");
-    // ===== ANCHOR: question-table-config-state =====
+  // ===== ANCHOR: question-table-config-state =====
   const [tableRows, setTableRows] = useState<string>("3");
   const [tableCols, setTableCols] = useState<string>("3");
   const [tableAutoNumber, setTableAutoNumber] = useState<boolean>(false);
@@ -79,7 +79,9 @@ export default function AdminQuestionsPage() {
 
     const { data: qData, error: qErr } = await sb
       .from("questions")
-      .select("id, question_number, title, prompt, marks, section, created_at")
+      .select(
+        "id, question_number, title, prompt, marks, section, answer_mode, table_config, created_at",
+      )
       .order("question_number", { ascending: true });
 
     if (qErr) {
@@ -115,6 +117,7 @@ export default function AdminQuestionsPage() {
     setParts((data ?? []) as any);
   }
 
+  // ===== ANCHOR: question-clear-editor-with-table =====
   function clearEditor() {
     setSelectedId("");
     setQNum("");
@@ -122,17 +125,41 @@ export default function AdminQuestionsPage() {
     setQPrompt("");
     setQMarks("0");
     setQSection("");
+    setAnswerMode("text");
+    setTableRows("3");
+    setTableCols("3");
+    setTableAutoNumber(false);
     setParts([]);
     setStatus("");
   }
 
-  function loadIntoEditor(q: QuestionRow) {
+  // ===== ANCHOR: question-load-into-editor-with-table =====
+  function loadIntoEditor(
+    q: QuestionRow & {
+      answer_mode?: string | null;
+      table_config?: any;
+    },
+  ) {
     setSelectedId(q.id);
     setQNum(String(q.question_number ?? ""));
     setQTitle(q.title ?? "");
     setQPrompt(q.prompt ?? "");
     setQMarks(String(q.marks ?? 0));
     setQSection((q.section as any) ?? "");
+
+    const mode = q.answer_mode === "table" ? "table" : "text";
+    setAnswerMode(mode);
+
+    if (mode === "table" && q.table_config) {
+      setTableRows(String(q.table_config.rows ?? 3));
+      setTableCols(String(q.table_config.cols ?? 3));
+      setTableAutoNumber(Boolean(q.table_config.autoNumber));
+    } else {
+      setTableRows("3");
+      setTableCols("3");
+      setTableAutoNumber(false);
+    }
+
     setStatus("");
     void loadParts(q.id);
   }
@@ -212,9 +239,19 @@ export default function AdminQuestionsPage() {
       return;
     }
 
+    // ===== ANCHOR: question-save-table-values =====
     const title = qTitle.trim();
     const prompt = qPrompt.trim();
     const section = (qSection || null) as any;
+    const answer_mode = answerMode;
+    const table_config =
+      answerMode === "table"
+        ? {
+            rows: Number(tableRows) || 0,
+            cols: Number(tableCols) || 0,
+            autoNumber: tableAutoNumber,
+          }
+        : null;
 
     if (!title) {
       setStatus("❌ Title is required.");
@@ -233,6 +270,8 @@ export default function AdminQuestionsPage() {
           prompt,
           marks,
           section,
+          answer_mode,
+          table_config,
         })
         .select("id")
         .single();
@@ -252,11 +291,13 @@ export default function AdminQuestionsPage() {
 
     const { error } = await sb
       .from("questions")
-      .update({
+            .update({
         title,
         prompt,
         marks,
         section,
+        answer_mode,
+        table_config,
       })
       .eq("id", selectedId);
 
@@ -550,7 +591,7 @@ export default function AdminQuestionsPage() {
                 </label>
               </div>
 
-                            {/* ===== ANCHOR: question-table-config-ui ===== */}
+              {/* ===== ANCHOR: question-table-config-ui ===== */}
               {answerMode === "table" ? (
                 <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3 space-y-3">
                   <div className="font-semibold">Table settings</div>
