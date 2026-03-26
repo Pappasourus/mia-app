@@ -1468,21 +1468,35 @@ export default function QuestionPage() {
                                           {teacherValue}
                                         </div>
                                       ) : (
-                                        <input
+                                        <textarea
                                           value={studentValue}
                                           onChange={(e) =>
                                             setTableCell(r, c, e.target.value)
                                           }
+                                          onInput={(e) => {
+                                            const el = e.currentTarget;
+                                            el.style.height = "auto";
+                                            el.style.height = `${el.scrollHeight}px`;
+                                          }}
                                           disabled={isSubmitted || isFinalized}
+                                          rows={1}
                                           style={{
                                             width: "100%",
                                             minWidth: 90,
+                                            minHeight: 42,
                                             border: "none",
                                             outline: "none",
                                             padding: "10px 12px",
                                             fontSize: 15,
                                             background: "#fff",
                                             boxSizing: "border-box",
+                                            resize: "none",
+                                            overflow: "hidden",
+                                            whiteSpace: "pre-wrap",
+                                            wordBreak: "break-word",
+                                            fontFamily:
+                                              "Arial, Helvetica, sans-serif",
+                                            lineHeight: 1.4,
                                           }}
                                         />
                                       )}
