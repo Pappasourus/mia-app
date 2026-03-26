@@ -58,6 +58,32 @@ export default function AdminQuestionsPage() {
   const [tableRows, setTableRows] = useState<string>("3");
   const [tableCols, setTableCols] = useState<string>("3");
   const [tableAutoNumber, setTableAutoNumber] = useState<boolean>(false);
+  // ===== ANCHOR: table-init-effect =====
+  useEffect(() => {
+    if (answerMode !== "table") return;
+
+    const r = Number(tableRows) || 0;
+    const c = Number(tableCols) || 0;
+
+    setColHeadings((prev) =>
+      Array.from({ length: c }, (_, i) => prev[i] ?? ""),
+    );
+
+    setRowHeadings((prev) =>
+      Array.from({ length: r }, (_, i) => prev[i] ?? ""),
+    );
+
+    setTableData((prev) =>
+      Array.from({ length: r }, (_, i) =>
+        Array.from({ length: c }, (_, j) => prev[i]?.[j] ?? ""),
+      ),
+    );
+  }, [tableRows, tableCols, answerMode]);
+
+  // ===== ANCHOR: question-table-grid-state =====
+  const [colHeadings, setColHeadings] = useState<string[]>([]);
+  const [rowHeadings, setRowHeadings] = useState<string[]>([]);
+  const [tableData, setTableData] = useState<string[][]>([]);
 
   // Base question fields
   const [qNum, setQNum] = useState<string>("");
@@ -291,7 +317,7 @@ export default function AdminQuestionsPage() {
 
     const { error } = await sb
       .from("questions")
-            .update({
+      .update({
         title,
         prompt,
         marks,
@@ -626,6 +652,58 @@ export default function AdminQuestionsPage() {
                     />
                     Auto-number first column from 1 to number of rows
                   </label>
+                </div>
+              ) : null}
+              {/* ===== ANCHOR: table-grid-ui ===== */}
+              {answerMode === "table" &&
+              Number(tableRows) > 0 &&
+              Number(tableCols) > 0 ? (
+                <div className="overflow-auto">
+                  <table className="border border-slate-700 mt-3">
+                    <thead>
+                      <tr>
+                        <th className="border p-1 text-xs">#</th>
+                        {colHeadings.map((h, i) => (
+                          <th key={i} className="border p-1">
+                            <input
+                              value={h}
+                              onChange={(e) => {
+                                const copy = [...colHeadings];
+                                copy[i] = e.target.value;
+                                setColHeadings(copy);
+                              }}
+                              className="w-24 bg-slate-900 border border-slate-700 px-1 text-xs"
+                              placeholder={`Col ${i + 1}`}
+                            />
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {tableData.map((row, r) => (
+                        <tr key={r}>
+                          <td className="border p-1 text-xs">
+                            {tableAutoNumber ? r + 1 : ""}
+                          </td>
+
+                          {row.map((cell, c) => (
+                            <td key={c} className="border p-1">
+                              <input
+                                value={cell}
+                                onChange={(e) => {
+                                  const copy = tableData.map((row) => [...row]);
+                                  copy[r][c] = e.target.value;
+                                  setTableData(copy);
+                                }}
+                                className="w-24 bg-slate-900 border border-slate-700 px-1 text-xs"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               ) : null}
 
