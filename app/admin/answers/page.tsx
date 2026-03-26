@@ -615,31 +615,36 @@ export default function AdminAnswersPage() {
       // If the answer is JSON part-answers AND this question has parts, print each part separately
       const partMeta = partsByQid.get(q.id) ?? [];
       if (asTable) {
-        // ===== ANCHOR: table-render-pdf =====
+        // ===== ANCHOR: table-render-pdf-dynamic-height =====
         const cellPadding = 4;
-        const colWidth = maxW / (asTable.cols || 1);
-        const rowHeight = 18;
+        const lineHeight = 10;
+        const colWidth = maxW / Math.max(asTable.cols || 1, 1);
 
         for (let r = 0; r < asTable.rows; r++) {
-          if (y > pageH - margin - 40) {
+          const rowLines: string[][] = [];
+
+          for (let c = 0; c < asTable.cols; c++) {
+            const cell = String(asTable.data?.[r]?.[c] ?? "");
+            const lines = doc.splitTextToSize(cell || "", colWidth - cellPadding * 2);
+            rowLines.push(lines.length ? lines : [""]);
+          }
+
+          const maxLines = Math.max(...rowLines.map((lines) => lines.length), 1);
+          const rowHeight = Math.max(18, cellPadding * 2 + maxLines * lineHeight);
+
+          if (y + rowHeight > pageH - margin) {
             doc.addPage();
             y = margin;
           }
 
           for (let c = 0; c < asTable.cols; c++) {
             const x = margin + c * colWidth;
-            const cell = String(asTable.data?.[r]?.[c] ?? "");
-
             doc.rect(x, y, colWidth, rowHeight);
 
-            const text = cell || "";
-            const lines = doc.splitTextToSize(text, colWidth - cellPadding * 2);
-
             let textY = y + 12;
-
-            for (const line of lines) {
-              doc.text(line, x + cellPadding, textY);
-              textY += 10;
+            for (const line of rowLines[c]) {
+              doc.text(String(line), x + cellPadding, textY);
+              textY += lineHeight;
             }
           }
 
