@@ -5,6 +5,16 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 
+// ===== ANCHOR: question-page-questionrow-with-table =====
+type QuestionTableConfig = {
+  rows?: number;
+  cols?: number;
+  autoNumber?: boolean;
+  colHeadings?: string[];
+  rowHeadings?: string[];
+  presetCells?: string[][];
+};
+
 type QuestionRow = {
   id: string;
   question_number: number;
@@ -12,6 +22,8 @@ type QuestionRow = {
   prompt: string;
   marks: number;
   section?: "A" | "B" | "C" | null;
+  answer_mode?: "text" | "table" | null;
+  table_config?: QuestionTableConfig | null;
 };
 
 type PartRow = {
@@ -524,9 +536,12 @@ export default function QuestionPage() {
       }
 
       // Load the question by ID (works for both modes)
+      // ===== ANCHOR: question-page-load-question-with-table =====
       const { data: qData, error: qErr } = await sb
         .from("questions")
-        .select("id, question_number, title, prompt, marks, section")
+        .select(
+          "id, question_number, title, prompt, marks, section, answer_mode, table_config",
+        )
         .eq("id", qidForThisPage)
         .single();
 
