@@ -422,16 +422,21 @@ export default function AdminAnswersPage() {
   ) {
     let y = startY;
 
+    // ===== ANCHOR: admin-answers-pdf-number-col-width =====
     const cellPadding = 4;
     const lineHeight = 10;
-    const totalCols = tableView.cols + (tableView.autoNumber ? 1 : 0);
-    const colWidth = maxW / Math.max(totalCols, 1);
+    const numberColWidth = tableView.autoNumber ? 28 : 0;
+    const dataCols = Math.max(tableView.cols, 1);
+    const colWidth = (maxW - numberColWidth) / dataCols;
 
     function drawRow(cells: string[], isHeader = false) {
-      const rowLines = cells.map((cell) => {
+      const rowLines = cells.map((cell, idx) => {
+        const thisColWidth =
+          tableView.autoNumber && idx === 0 ? numberColWidth : colWidth;
+
         const lines = doc.splitTextToSize(
           String(cell ?? ""),
-          colWidth - cellPadding * 2,
+          thisColWidth - cellPadding * 2,
         );
         return lines.length ? lines : [""];
       });
@@ -444,9 +449,13 @@ export default function AdminAnswersPage() {
         y = margin;
       }
 
+      let x = margin;
+
       for (let c = 0; c < cells.length; c++) {
-        const x = margin + c * colWidth;
-        doc.rect(x, y, colWidth, rowHeight);
+        const thisColWidth =
+          tableView.autoNumber && c === 0 ? numberColWidth : colWidth;
+
+        doc.rect(x, y, thisColWidth, rowHeight);
 
         if (isHeader) {
           doc.setFont("helvetica", "bold");
@@ -459,6 +468,8 @@ export default function AdminAnswersPage() {
           doc.text(String(line), x + cellPadding, textY);
           textY += lineHeight;
         }
+
+        x += thisColWidth;
       }
 
       y += rowHeight;
