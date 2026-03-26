@@ -371,26 +371,15 @@ export default function QuestionPage() {
         console.log("tqData", tqData);
         console.log("tqErr", tqErr);
 
-        if (!tqErr && tqData?.length) {
-          const nums = (tqData ?? [])
-            .map((r: any) => Number(r?.sort_order))
-            .filter((n) => Number.isFinite(n));
-          setAllQuestionNumbers(nums);
-
-          const map: Record<number, string> = {};
+                if (!tqErr && tqData?.length) {
           const questionIds: string[] = [];
 
           for (const r of tqData ?? []) {
-            const n = Number((r as any)?.sort_order);
             const id = String((r as any)?.question_id ?? "");
-            if (Number.isFinite(n) && id) {
-              map[n] = id;
+            if (id) {
               questionIds.push(id);
             }
           }
-          setQuestionsIdByNumber(map);
-
-          const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
 
           const { data: questionSectionsData, error: questionSectionsErr } =
             await sb
@@ -402,38 +391,54 @@ export default function QuestionPage() {
             {};
 
           if (!questionSectionsErr) {
-            // ===== ANCHOR: question-page-debug-sections =====
-            console.log("questionSectionsData", questionSectionsData);
             for (const q of questionSectionsData ?? []) {
               const qid = String((q as any)?.id ?? "");
-              const secRaw = String((q as any)?.section ?? "").trim();
-
-              // ===== ANCHOR: normalize-section-values =====
-              const secUpper = secRaw.toUpperCase();
+              const secRaw = String((q as any)?.section ?? "")
+                .trim()
+                .toUpperCase();
 
               let sec: "A" | "B" | "C" | "Other" = "Other";
-
-              if (secUpper.includes("A")) sec = "A";
-              else if (secUpper.includes("B")) sec = "B";
-              else if (secUpper.includes("C")) sec = "C";
+              if (secRaw === "A" || secRaw === "SECTION A") sec = "A";
+              else if (secRaw === "B" || secRaw === "SECTION B") sec = "B";
+              else if (secRaw === "C" || secRaw === "SECTION C") sec = "C";
 
               sectionByQuestionId[qid] = sec;
             }
           }
-          console.log("test question ids map", map);
 
-          for (const r of tqData ?? []) {
-            const n = Number((r as any)?.sort_order);
-            const qid = String((r as any)?.question_id ?? "");
+          const ordered = (tqData ?? [])
+            .map((r: any) => {
+              const qid = String((r as any)?.question_id ?? "");
+              const originalNumber = Number((r as any)?.sort_order ?? 0);
+              return {
+                qid,
+                originalNumber,
+                section: sectionByQuestionId[qid] ?? "Other",
+              };
+            })
+            .filter((r) => r.qid && Number.isFinite(r.originalNumber))
+            .sort((a, b) => {
+              const sectionRank = { A: 1, B: 2, C: 3, Other: 4 };
+              const bySection = sectionRank[a.section] - sectionRank[b.section];
+              if (bySection !== 0) return bySection;
+              return a.originalNumber - b.originalNumber;
+            });
 
-            if (Number.isFinite(n)) {
-              sectionMap[n] = sectionByQuestionId[qid] ?? "Other";
-            }
-          }
+          const nums = ordered.map((_, idx) => idx + 1);
+          setAllQuestionNumbers(nums);
 
+          const map: Record<number, string> = {};
+          const sectionMap: Record<number, "A" | "B" | "C" | "Other"> = {};
+
+          ordered.forEach((row, idx) => {
+            const displayNumber = idx + 1;
+            map[displayNumber] = row.qid;
+            sectionMap[displayNumber] = row.section;
+          });
+
+          setQuestionsIdByNumber(map);
           setSectionByQuestionNumber(sectionMap);
 
-          // Load sub-question labels for ALL questions in this test (for tile logic)
           const allQids = Object.values(map).filter(Boolean);
 
           if (allQids.length > 0) {
