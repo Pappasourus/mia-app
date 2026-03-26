@@ -165,7 +165,7 @@ export default function QuestionPage() {
   );
   const [hasStarted, setHasStarted] = useState(false);
 
-    // ===== ANCHOR: question-page-reset-start-when-locked =====
+  // ===== ANCHOR: question-page-reset-start-when-locked =====
   useEffect(() => {
     if (isFinalized) {
       window.sessionStorage.removeItem("mia_test_started");
@@ -379,7 +379,7 @@ export default function QuestionPage() {
         console.log("tqData", tqData);
         console.log("tqErr", tqErr);
 
-                if (!tqErr && tqData?.length) {
+        if (!tqErr && tqData?.length) {
           const questionIds: string[] = [];
 
           for (const r of tqData ?? []) {
@@ -953,7 +953,10 @@ export default function QuestionPage() {
               fontSize: 10,
             }}
           >
-            <span>Candidate: {candidateId || "—"}</span>
+            <span>
+              Candidate: {candidateId || "—"}
+              {email ? ` | ${email}` : ""}
+            </span>
             <Link
               href="/"
               style={{
