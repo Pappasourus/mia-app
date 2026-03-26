@@ -52,6 +52,8 @@ export default function AdminQuestionsPage() {
 
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
+  // ===== ANCHOR: question-table-mode-state =====
+  const [answerMode, setAnswerMode] = useState<"text" | "table">("text");
 
   // Base question fields
   const [qNum, setQNum] = useState<string>("");
@@ -94,7 +96,9 @@ export default function AdminQuestionsPage() {
 
     const { data, error } = await sb
       .from("question_parts")
-      .select("id, question_id, part_label, prompt, marks, sort_order, created_at")
+      .select(
+        "id, question_id, part_label, prompt, marks, sort_order, created_at",
+      )
       .eq("question_id", questionId)
       .order("sort_order", { ascending: true });
 
@@ -189,7 +193,7 @@ export default function AdminQuestionsPage() {
     if (!sb) return;
     setStatus("");
 
-        const marks = parseInt(qMarks, 10);
+    const marks = parseInt(qMarks, 10);
     if (!Number.isFinite(marks) || marks < 0) {
       setStatus("❌ Marks must be 0 or more.");
       return;
@@ -219,7 +223,7 @@ export default function AdminQuestionsPage() {
     if (!selectedId) {
       const { data, error } = await sb
         .from("questions")
-                .insert({
+        .insert({
           question_number: nextQuestionNumber,
           title,
           prompt,
@@ -244,7 +248,7 @@ export default function AdminQuestionsPage() {
 
     const { error } = await sb
       .from("questions")
-            .update({
+      .update({
         title,
         prompt,
         marks,
@@ -294,7 +298,9 @@ export default function AdminQuestionsPage() {
     const labels = parts.map((p) => p.part_label);
     const label = nextLabel(labels);
 
-    const nextSort = parts.length ? Math.max(...parts.map((p) => p.sort_order)) + 1 : 1;
+    const nextSort = parts.length
+      ? Math.max(...parts.map((p) => p.sort_order)) + 1
+      : 1;
 
     setStatus("Adding sub-question…");
 
@@ -318,7 +324,10 @@ export default function AdminQuestionsPage() {
   async function updatePart(partId: string, patch: Partial<PartRow>) {
     if (!sb) return;
 
-    const { error } = await sb.from("question_parts").update(patch).eq("id", partId);
+    const { error } = await sb
+      .from("question_parts")
+      .update(patch)
+      .eq("id", partId);
     if (error) {
       setStatus(`❌ Could not save part: ${error.message}`);
       return;
@@ -390,7 +399,8 @@ export default function AdminQuestionsPage() {
           <div>
             <h1 className="text-2xl font-extrabold">Admin: Questions</h1>
             <div className="text-sm text-slate-400 mt-1">
-              Logged in as: <b className="text-slate-200">{adminEmail || "…"}</b>
+              Logged in as:{" "}
+              <b className="text-slate-200">{adminEmail || "…"}</b>
             </div>
           </div>
 
@@ -448,8 +458,8 @@ export default function AdminQuestionsPage() {
                             Q{q.question_number}: {q.title}
                           </div>
                           <div className="text-xs text-slate-400 whitespace-nowrap">
-                            {q.section ? `Section ${q.section}` : "No section"} •{" "}
-                            {q.marks} marks
+                            {q.section ? `Section ${q.section}` : "No section"}{" "}
+                            • {q.marks} marks
                           </div>
                         </div>
                         <div className="text-xs text-slate-500 mt-1 truncate">
@@ -479,7 +489,6 @@ export default function AdminQuestionsPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                
                 <label className="space-y-1">
                   <div className="text-xs text-slate-400">Section</div>
                   <select
@@ -522,8 +531,25 @@ export default function AdminQuestionsPage() {
                 </div>
               </div>
 
+              {/* ===== ANCHOR: question-table-mode-toggle ===== */}
+              <div className="space-y-1">
+                <div className="text-xs text-slate-400">Answer format</div>
+                <label className="flex items-center gap-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={answerMode === "table"}
+                    onChange={(e) =>
+                      setAnswerMode(e.target.checked ? "table" : "text")
+                    }
+                  />
+                  Table format question
+                </label>
+              </div>
+
               <label className="space-y-1">
-                <div className="text-xs text-slate-400">Main prompt (optional)</div>
+                <div className="text-xs text-slate-400">
+                  Main prompt (optional)
+                </div>
                 <textarea
                   value={qPrompt}
                   onChange={(e) => setQPrompt(e.target.value)}
@@ -570,7 +596,8 @@ export default function AdminQuestionsPage() {
                   </div>
                 ) : parts.length === 0 ? (
                   <div className="text-xs text-slate-400">
-                    No sub-questions yet. This will behave like a single question.
+                    No sub-questions yet. This will behave like a single
+                    question.
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -627,7 +654,8 @@ export default function AdminQuestionsPage() {
                               value={String(p.marks ?? 0)}
                               onChange={(e) =>
                                 updatePart(p.id, {
-                                  marks: parseInt(e.target.value || "0", 10) || 0,
+                                  marks:
+                                    parseInt(e.target.value || "0", 10) || 0,
                                 } as any)
                               }
                               className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
@@ -640,7 +668,9 @@ export default function AdminQuestionsPage() {
                           <textarea
                             value={p.prompt}
                             onChange={(e) =>
-                              updatePart(p.id, { prompt: e.target.value } as any)
+                              updatePart(p.id, {
+                                prompt: e.target.value,
+                              } as any)
                             }
                             className="w-full min-h-[80px] rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2"
                             placeholder="Part prompt…"
