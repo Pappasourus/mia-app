@@ -334,11 +334,22 @@ export default function AdminAnswersPage() {
     const { jsPDF } = await import("jspdf");
 
     for (const s of students) {
-      // Temporarily switch the selected student so existing data structures work
-      setSelectedStudentId(s.user_id);
+  // ===== ANCHOR: export-direct-fetch-per-student =====
+  const { data: studentAnswers, error: aErr } = await sb!
+    .from("answers")
+    .select("question_id, status, draft_text, submitted_text")
+    .eq("student_user_id", s.user_id)
+    .eq("test_id", selectedTestId);
 
-      // Give React a moment to apply state
-      await new Promise((r) => setTimeout(r, 250));
+  if (aErr) {
+    console.error("Failed to load answers for", s.email, aErr);
+    continue;
+  }
+
+  const answerMap = new Map<string, any>();
+  for (const a of studentAnswers ?? []) {
+    answerMap.set(a.question_id, a);
+  }
 
       // Build a PDF with the answers currently loaded for this student
       const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -394,7 +405,7 @@ export default function AdminAnswersPage() {
 
       for (const q of orderedQuestions) {
         // NOTE: answers state will be for the currently selected student
-        const a = answerByQid.get(q.id);
+        const a = answerMap.get(q.id);
         const st = a?.status ?? "not_started";
         const answerText =
           st === "submitted"
@@ -474,7 +485,7 @@ export default function AdminAnswersPage() {
       doc.save(filename);
 
       // Small pause so downloads don't collide
-      await new Promise((r) => setTimeout(r, 400));
+      
     }
 
     setStatusMsg("✅ Exported PDFs for all users.");
