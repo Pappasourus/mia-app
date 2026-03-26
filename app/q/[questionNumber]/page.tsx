@@ -954,8 +954,8 @@ export default function QuestionPage() {
             }}
           >
             <span>
-              Candidate: {candidateId || "—"}
-              {email ? ` | ${email}` : ""}
+              Candidate ID: {candidateId || "—"}
+              {email ? ` | Email: ${email}` : ""}
             </span>
             <Link
               href="/"
