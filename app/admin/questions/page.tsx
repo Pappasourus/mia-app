@@ -360,9 +360,23 @@ export default function AdminQuestionsPage() {
 
     setStatus("Deleting question…");
 
+    // ===== ANCHOR: question-delete-friendly-fk-message =====
     const { error } = await sb.from("questions").delete().eq("id", selectedId);
 
     if (error) {
+      const msg = String(error.message ?? "");
+
+      if (
+        msg.includes("test_questions_question_id_fkey") ||
+        msg.includes('violates foreign key constraint') ||
+        msg.includes('table "test_questions"')
+      ) {
+        setStatus(
+          "❌ This question cannot be deleted because it is still used in one or more tests. Remove it from those tests first, then try again.",
+        );
+        return;
+      }
+
       setStatus(`❌ Delete failed: ${error.message}`);
       return;
     }
